@@ -31,8 +31,8 @@ punctuation included, rather than another corpus's style.
 - Labels: base Qwen3-ASR 0.6B, prompted with `language <X><asr_text>`. Drop an utterance whose
   label is more than 30% WER from FLEURS's own transcript, so the base model's mistakes aren't
   taught back to it.
-- FLEURS also has Sinhala (`si_lk`). Keep its test split as a second Sinhala test set: read
-  Wikipedia sentences, rather than OpenSLR's.
+- FLEURS has no Sinhala, so the Sinhala tests are OpenSLR 52's 24 test speakers and your own
+  dictations. Common Voice has a little Sinhala (CC0), but downloading it needs an account.
 
 **There's no script for the replay set yet, nor for scoring a checkpoint (steps 5 and 7).**
 
@@ -77,8 +77,8 @@ punctuation included, rather than another corpus's style.
 6. **Convert (confirm)**: to MLX 8-bit with mlx-audio's converter, and add `"Sinhala"` to
    `support_languages` in `config.json`.
 7. **Evaluate on a Mac**:
-   - the OpenSLR test speakers and the FLEURS `si_lk` test split: CER and WER, and how many
-     English words came out in English letters;
+   - the OpenSLR test speakers: CER and WER, and how many English words came out in English
+     letters;
    - your own dictations;
    - in LiveTranscribe, `make eval ARGS="--multiline --stt-model <the new model>"`: English must
      stay at the base model's numbers.
