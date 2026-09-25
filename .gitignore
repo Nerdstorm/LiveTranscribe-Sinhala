@@ -9,9 +9,11 @@ jsonl/
 out/
 work/
 
-# The labeller's build, and the coverage data an instrumented build leaves where it runs
+# The Swift tools' builds, and the coverage data an instrumented build leaves where it runs
 tools/pseudo-label/.build/
 tools/pseudo-label/.swiftpm/
+tools/trainer/.build/
+tools/trainer/.swiftpm/
 *.profraw
 
 __pycache__/

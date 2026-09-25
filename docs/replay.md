@@ -33,7 +33,7 @@ the label's word error rate against the corpus's transcript (character error rat
   (`fr_fr`) and German (`de_de`). They are sentences from Wikinews, Wikijunior and Wikivoyage (by
   way of the FLORES benchmark), read aloud. Each language has about 1,500 sentences, each read by
   one to three speakers, most often two. None of the 350 sentences in FLEURS's English test split,
-  which step 5 of the [runbook](training.md) checks English on, is in the set.
+  which [training.md](training.md#the-run) checks English on, is in the set.
 - **LibriSpeech** ([OpenSLR 12](https://www.openslr.org/12/)), `librispeech`: 16,000 of the 28,539
   utterances of train-clean-100, picked with seed 52 by `pick_librispeech.py`. They are
   audiobooks, read from public domain books. LibriSpeech's test sets, which Qwen3-ASR's English
@@ -150,11 +150,13 @@ them, and fewer utterances.
 
 ## Limits
 
-- **The labels come from the 8-bit MLX model the app runs, not the bf16 weights that are
-  fine-tuned.** Quantisation changes some outputs slightly, so the targets are what the shipped
-  model writes, which is what the fine-tuned model must keep doing, but not exactly the trained
-  weights' own. Labelling on the training machine with `Qwen/Qwen3-ASR-0.6B` in bf16 would remove
-  the difference, with a script for Qwen's own inference package.
+- **The labels come from the 8-bit MLX model the app runs, and training starts from that same
+  model**: the trainer ([training.md](training.md)) loads `mlx-community/Qwen3-ASR-0.6B-8bit`
+  and dequantises it to float32, so the replay targets are the starting weights' own
+  transcripts. Qwen's bf16 release would label a little differently: on 80 Spanish clips, with
+  the app's earlier audio features, the bf16 and 8-bit labels were identical for 30 of the 40
+  that weren't silent, and their error against the transcripts was about the same (0.078 and
+  0.083 on average).
 - It's all read speech: encyclopedic and news sentences, and audiobooks. Nothing conversational,
   and nothing like a dictated message.
 
