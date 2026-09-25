@@ -89,8 +89,7 @@ public final class Trainer {
             }
             encoder.freeze()
         }
-        weights = Dictionary(uniqueKeysWithValues: trainable.model.trainableParameters().flattened())
-            .mapValues { $0.asType(.float32) }
+        weights = Self.masters(of: Dictionary(uniqueKeysWithValues: trainable.model.trainableParameters().flattened()))
         if computeType != .float32 {
             trainable.model.update(parameters: trainable.model.parameters().mapValues { $0.asType(computeType.dtype) })
         }
@@ -98,6 +97,16 @@ public final class Trainer {
             Forward.loss(trainable, arguments.0, normalizer: arguments.1)
         }
         eval(Array(weights.values))
+    }
+
+    /// Float32 copies of `parameters`, evaluated, that share no array with them. Converting a
+    /// module to another dtype updates its arrays in place, and `asType` to an array's own dtype
+    /// returns that same array, so weights taken with `asType(.float32)` alone would be converted
+    /// along with the model.
+    public static func masters(of parameters: Tensors) -> Tensors {
+        let copies = parameters.mapValues { $0.asType(.float32) + MLXArray(Float(0)) }
+        eval(Array(copies.values))
+        return copies
     }
 
     /// Carries on from a saved state: its weights and optimizer.

@@ -1,5 +1,6 @@
 import Foundation
 @preconcurrency import MLX
+import MLXNN
 import Testing
 import TrainerKit
 
@@ -266,6 +267,23 @@ struct ExportTests {
         let oneLine = #"{"support_languages": ["Chinese", "English"], "x": 1}"#
         #expect(try Export.addingLanguage("Sinhala", toConfig: oneLine)
             == #"{"support_languages": ["Chinese", "English", "Sinhala"], "x": 1}"#)
+    }
+}
+
+struct MasterWeightsTests {
+    @Test func mastersKeepFloat32WhenTheModelIsConvertedInPlace() {
+        MLXRandom.seed(5)
+        let linear = Linear(8, 8)
+        let parameters = Dictionary(uniqueKeysWithValues: linear.trainableParameters().flattened())
+        let original = parameters["weight"]!.asArray(Float.self)
+        let aliased = parameters.mapValues { $0.asType(.float32) }
+        let masters = Trainer.masters(of: parameters)
+        linear.update(parameters: linear.parameters().mapValues { $0.asType(.bfloat16) })
+
+        // The pitfall the copies avoid: the plain asType(.float32) went to bfloat16 with the model.
+        #expect(aliased["weight"]!.dtype == .bfloat16)
+        #expect(masters.values.allSatisfy { $0.dtype == .float32 })
+        #expect(masters["weight"]!.asArray(Float.self) == original)
     }
 }
 
