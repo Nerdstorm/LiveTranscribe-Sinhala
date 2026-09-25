@@ -31,13 +31,21 @@ Training needs a rented NVIDIA GPU ([docs/training.md](docs/training.md)).**
 2. **Speaker split.** `scripts/make_split.py` writes `data/speaker-split.tsv`: 442 speakers for
    training, 12 for choosing checkpoints and 24 for testing, so no test voice is heard in
    training.
-3. **Training files.** `scripts/prepare_data.py` writes `train.jsonl`, `dev.jsonl` and
+3. **Replay set.** Speech in languages the model already knows, so fine-tuning doesn't wear them
+   down. `scripts/fetch_fleurs.py` fetches FLEURS in English, Chinese, Spanish, French and
+   German, `scripts/fetch_librispeech.py` fetches LibriSpeech English, and
+   `scripts/pick_librispeech.py` picks 16,000 of its utterances. `tools/pseudo-label`, a Swift
+   tool for Macs with Apple silicon, labels them with the base model, and `scripts/make_replay.py`
+   scores each label against the corpus's transcript and writes `data/replay.tsv`.
+   [docs/replay.md](docs/replay.md) has the method and the numbers.
+4. **Training files.** `scripts/prepare_data.py` writes `train.jsonl`, `dev.jsonl` and
    `test.jsonl` for Qwen's fine-tuning script, with the English words rewritten in English
-   letters.
-4. **Fine-tuning, conversion to MLX and evaluation**: [docs/training.md](docs/training.md).
+   letters, and `scripts/prepare_replay.py` writes `replay.jsonl`.
+5. **Fine-tuning, conversion to MLX and evaluation**: [docs/training.md](docs/training.md).
 
-Steps 1 and 2 have been run and their output is committed, so a training run starts at step 3.
-Every script shows its usage with `--help`, and needs only Python 3.9 or later.
+Steps 1 to 3 have been run and their output is committed, so a training run starts at step 4.
+Every script shows its usage with `--help`, and needs only Python 3.9 or later. `pseudo-label`
+needs Xcode, and runs only to remake the replay labels.
 
 ## Tests
 
@@ -46,7 +54,14 @@ python3 -m unittest discover -s tests
 ```
 
 The tests cover every script, and check that the committed files in `data/` are well formed and
-that the speaker split is the one `make_split.py` makes.
+that the speaker split is the one `make_split.py` makes. `pseudo-label`'s own tests, for its
+labels file, run on a Mac:
+
+```bash
+cd tools/pseudo-label
+xcodebuild test -scheme PseudoLabel -destination platform=macOS,arch=arm64 -derivedDataPath .build/xcode \
+  -skipPackagePluginValidation CLANG_COVERAGE_MAPPING=NO
+```
 
 ## Using the model in LiveTranscribe
 
@@ -58,8 +73,11 @@ fine-tuned model converted to MLX needs no change to the app's speech-to-text. T
 
 ## Licence
 
-The code is under the MIT licence ([LICENSE](LICENSE)). The files in `data/` are derived from the
-[Large Sinhala ASR training data set](https://www.openslr.org/52/) (OpenSLR 52), Copyright 2016,
-2017, 2018 Google, Inc., and like it are under
-[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/): see
-[data/README.md](data/README.md). The corpus itself isn't included.
+The code is under the MIT licence ([LICENSE](LICENSE)). The files in `data/` are under
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/): `speaker-split.tsv` and
+`loanwords.tsv` are derived from the [Large Sinhala ASR training data set](https://www.openslr.org/52/)
+(OpenSLR 52), Copyright 2016, 2017, 2018 Google, Inc., under CC BY-SA 4.0, and `replay.tsv` from
+[FLEURS](https://huggingface.co/datasets/google/fleurs) (CC BY 4.0), whose speakers read sentences
+from FLORES (CC BY-SA 4.0), and the [LibriSpeech ASR corpus](https://www.openslr.org/12/)
+(CC BY 4.0). [data/README.md](data/README.md) has the attribution. None of the corpora is
+included.
