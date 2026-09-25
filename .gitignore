@@ -1,0 +1,9 @@
+# The corpus and everything made from it during a run
+asr_sinhala/
+*.zip
+jsonl/
+out/
+work/
+
+__pycache__/
+.DS_Store
