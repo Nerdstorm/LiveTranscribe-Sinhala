@@ -8,8 +8,8 @@ The aim is one model for English, the other languages Qwen3-ASR already knows, a
 Sinhala comes out in Sinhala script, with English words in English letters, as people type it:
 "meeting එක cancel කරන්න".
 
-**Status: the training data is prepared and tested, but the model hasn't been trained yet.
-Training needs a rented NVIDIA GPU ([docs/training.md](docs/training.md)).**
+**Status: the training data is prepared and tested, and the trainer is built and checked on a
+Mac. The model hasn't been trained yet ([docs/training.md](docs/training.md)).**
 
 ## Why fine-tune
 
@@ -39,13 +39,16 @@ Training needs a rented NVIDIA GPU ([docs/training.md](docs/training.md)).**
    scores each label against the corpus's transcript and writes `data/replay.tsv`.
    [docs/replay.md](docs/replay.md) has the method and the numbers.
 4. **Training files.** `scripts/prepare_data.py` writes `train.jsonl`, `dev.jsonl` and
-   `test.jsonl` for Qwen's fine-tuning script, with the English words rewritten in English
-   letters, and `scripts/prepare_replay.py` writes `replay.jsonl`.
-5. **Fine-tuning, conversion to MLX and evaluation**: [docs/training.md](docs/training.md).
+   `test.jsonl`, with the English words rewritten in English letters, and
+   `scripts/prepare_replay.py` writes `replay.jsonl`.
+5. **Fine-tuning.** `tools/trainer`, a Swift tool for Macs with Apple silicon, fine-tunes the
+   model with the MLX code the app runs it with, and exports it as a model folder the app loads.
+   [docs/training.md](docs/training.md) has the run and the evaluation.
 
 Steps 1 to 3 have been run and their output is committed, so a training run starts at step 4.
-Every script shows its usage with `--help`, and needs only Python 3.9 or later. `pseudo-label`
-needs Xcode, and runs only to remake the replay labels.
+Every script shows its usage with `--help`, and needs only Python 3.9 or later. The Swift tools
+need Xcode: `pseudo-label` runs only to remake the replay labels, and `trainer` needs a Mac with
+Apple silicon and 48 GB of memory (training peaks at about 35 GB).
 
 ## Tests
 
@@ -54,20 +57,28 @@ python3 -m unittest discover -s tests
 ```
 
 The tests cover every script, and check that the committed files in `data/` are well formed and
-that the speaker split is the one `make_split.py` makes. `pseudo-label`'s own tests, for its
-labels file, run on a Mac:
+that the speaker split is the one `make_split.py` makes. The Swift tools' own tests run on a Mac:
+`pseudo-label`'s cover its labels file, and `trainer`'s the prompt, batching, the optimizer, the
+schedule, scoring and export, without loading the model.
 
 ```bash
 cd tools/pseudo-label
 xcodebuild test -scheme PseudoLabel -destination platform=macOS,arch=arm64 -derivedDataPath .build/xcode \
   -skipPackagePluginValidation CLANG_COVERAGE_MAPPING=NO
+cd ../trainer
+xcodebuild test -scheme Trainer -destination platform=macOS,arch=arm64 -derivedDataPath .build/xcode \
+  -skipPackagePluginValidation CLANG_COVERAGE_MAPPING=NO
 ```
+
+`trainer check` and `trainer overfit` test it against the model itself ([docs/training.md](docs/training.md#the-run)).
 
 ## Using the model in LiveTranscribe
 
 LiveTranscribe runs Qwen3-ASR with MLX (`mlx-community/Qwen3-ASR-0.6B-8bit`). It lets the model
-detect the language and removes the `language …<asr_text>` prefix whatever the language, so a
-fine-tuned model converted to MLX needs no change to the app's speech-to-text. The app's
+detect the language and removes the `language …<asr_text>` prefix whatever the language, so the
+exported model needs no change to the app's speech-to-text, **except that the app must move to
+mlx-audio-swift `01dec7c` for the audio features the model is trained on**
+([docs/training.md](docs/training.md#the-audio-features)). The app's
 `make eval` and `make bench` measure another model with `ARGS="--stt-model <repository>"`.
 **How the app's cleanup and spoken commands treat Sinhala text hasn't been tested.**
 
