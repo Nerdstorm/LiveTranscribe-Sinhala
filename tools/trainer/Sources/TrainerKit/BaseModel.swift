@@ -94,6 +94,14 @@ public final class TrainableModel: @unchecked Sendable {
 
     /// The folder's weights as the model's parameters: keys as Qwen3ASRModel.sanitize leaves them,
     /// quantized layers (a .weight, .scales and .biases triple) dequantized, all cast to `dtype`.
+    /// An affine-quantized layer's weights, level × scale + bias computed in float32. Given
+    /// bfloat16 scales, MLX's `dequantized` computes in bfloat16 whatever dtype it's asked for,
+    /// which leaves weights up to half a step off the model's grid.
+    public static func dequantize(_ weight: MLXArray, scales: MLXArray, biases: MLXArray?, groupSize: Int, bits: Int) -> MLXArray {
+        dequantized(weight, scales: scales.asType(.float32), biases: biases?.asType(.float32),
+                    groupSize: groupSize, bits: bits, mode: .affine, dtype: .float32)
+    }
+
     static func loadWeights(directory: URL, config: Qwen3ASRConfig, dtype: DType) throws -> [String: MLXArray] {
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "safetensors" }
@@ -113,10 +121,8 @@ public final class TrainableModel: @unchecked Sendable {
                 guard let quantization else {
                     throw ModelError.unexpectedModel("\(layer) is quantized but config.json has no quantization")
                 }
-                weights[key] = dequantized(
-                    value, scales: scales, biases: sanitized[layer + ".biases"],
-                    groupSize: quantization.groupSize, bits: quantization.bits, mode: .affine, dtype: .float32
-                ).asType(dtype)
+                weights[key] = dequantize(value, scales: scales, biases: sanitized[layer + ".biases"],
+                                          groupSize: quantization.groupSize, bits: quantization.bits).asType(dtype)
             } else {
                 weights[key] = value.asType(dtype)
             }

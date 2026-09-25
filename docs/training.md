@@ -55,7 +55,7 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
 1.6 GB snapshot at each evaluation.
 
 1. **Data**: unzip the 16 OpenSLR zips into one `asr_sinhala/`, fetch the replay corpora and
-   FLEURS's English test split, and write `jsonl/`:
+   FLEURS's English test and dev splits, and write `jsonl/`:
 
    ```bash
    for zip in asr_sinhala_*.zip; do unzip -q -n "$zip"; done
@@ -65,13 +65,15 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
    python3 scripts/fetch_librispeech.py --out librispeech --extract
    python3 scripts/prepare_replay.py --fleurs fleurs --librispeech librispeech \
      --replay data/replay.tsv --out jsonl --check-audio
-   python3 scripts/fetch_fleurs.py --out fleurs --languages en_us --splits test --extract
+   python3 scripts/fetch_fleurs.py --out fleurs --languages en_us --splits test,dev --extract
    python3 scripts/prepare_english_test.py --fleurs fleurs --out jsonl --check-audio
+   python3 scripts/prepare_english_test.py --fleurs fleurs --out jsonl --split dev --check-audio
    ```
 
    Every zip holds the same `LICENSE` and `utt_spk_text.tsv`, and `-n` keeps the first copy
    instead of asking. The scripts should print train 172134, dev 4411 and test 8748, replay
-   30128, fleurs_en_test 647, and missing audio 0 each time. Read `jsonl/rewrites.tsv`: every
+   30128, fleurs_en_test 647, fleurs_en_dev 394, and missing audio 0 each time. Training watches
+   English on the dev split; the test split is kept for the end. Read `jsonl/rewrites.tsv`: every
    rewrite should be one a Sinhala speaker would type. FLEURS is about 7.9 GB and LibriSpeech
    6.4 GB; each file is checked against its published hash, and a download that breaks off carries
    on where it stopped when run again. The JSONL files point at the audio where it is, so leave it
@@ -127,8 +129,10 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
 6. **Learning rate**: two runs with the real run's settings, stopped early:
 
    ```bash
-   caffeinate -i $T train --run out/lr-2e-5 --rate 2e-5 --stop-after 200 >> out/lr-2e-5.log 2>&1
-   caffeinate -i $T train --run out/lr-1e-4 --rate 1e-4 --stop-after 200 >> out/lr-1e-4.log 2>&1
+   caffeinate -i $T train --run out/lr-2e-5 --rate 2e-5 --english jsonl/fleurs_en_dev.jsonl \
+     --stop-after 200 >> out/lr-2e-5.log 2>&1
+   caffeinate -i $T train --run out/lr-1e-4 --rate 1e-4 --english jsonl/fleurs_en_dev.jsonl \
+     --stop-after 200 >> out/lr-1e-4.log 2>&1
    ```
 
    Both see the same batches in the same order, and in the first epoch every batch is new, so
@@ -139,7 +143,8 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
 7. **Train**:
 
    ```bash
-   caffeinate -i $T train --run out/<name> --rate <rate> >> out/<name>.log 2>&1
+   caffeinate -i $T train --run out/<name> --rate <rate> --english jsonl/fleurs_en_dev.jsonl \
+     >> out/<name>.log 2>&1
    ```
 
    Ctrl-C (or `kill`) stops it after the current step and saves. Run the same command to carry
@@ -148,10 +153,15 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
      must match; the token budget, `--cache-limit-mb` and the saving and evaluation options may
      change;
    - `state-<step>/`, the last two saved states;
-   - `snapshots/step-<N>/`, bf16 weights with `dev.tsv` and `eval.json`, four times an epoch;
-   - `metrics.jsonl`, every step and every evaluation.
+   - `snapshots/step-<N>/`, bf16 weights with `dev.tsv` and `eval.json`, four times an epoch,
+     and with `--english` the English dev transcripts, `english.tsv` and `english.json`;
+   - `english-step-0/`, the untrained model's English dev transcripts, measured before the
+     first step;
+   - `metrics.jsonl`, every step and every evaluation, with English WER and CER beside dev
+     CER.
 
-8. **Pick the snapshot** with the lowest dev CER in `metrics.jsonl`, not the lowest loss.
+8. **Pick the snapshot** with the lowest dev CER in `metrics.jsonl`, not the lowest loss, among
+   those whose English WER hasn't risen past step 0's by more than you'll accept.
 
 9. **Export** it as a model folder the app loads, quantised like the base model (text model
    8-bit, audio encoder bf16) and with `Sinhala` in `support_languages`:

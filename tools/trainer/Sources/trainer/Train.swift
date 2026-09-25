@@ -12,6 +12,8 @@ struct Train: AsyncParsableCommand {
     @Option(help: "The run's folder: settings, saved states, snapshots and metrics.") var run: String
     @Option(help: "Training records (repeat for several files).") var train: [String] = ["jsonl/train.jsonl", "jsonl/replay.jsonl"]
     @Option(help: "Dev records.") var dev = "jsonl/dev.jsonl"
+    @Option(help: "Records in a language the model already knows (FLEURS English dev) that each evaluation also transcribes, to watch for forgetting.")
+    var english: String?
     @Option(help: "Peak learning rate.") var rate: Double
     @Option var epochs = 1
     @Option var seed: UInt64 = 52
@@ -41,12 +43,13 @@ struct Train: AsyncParsableCommand {
             tokenBudget: tokenBudget, peakRate: rate, warmupFraction: warmup, clip: clip, computeType: compute,
             trainEncoder: !freezeEncoder, saveEveryMinutes: saveEvery, keepStates: keep, devLossEvery: devLossEvery,
             devLossUtterances: devLossUtterances, evaluationsPerEpoch: evaluations, devTranscribeUtterances: devTranscribe,
-            cacheLimitMB: cacheLimitMB
+            cacheLimitMB: cacheLimitMB, english: english
         )
         let stop = StopSignal()
         let training = try await TrainingRun(
             settings: settings, folder: RunFolder(URL(fileURLWithPath: run, isDirectory: true)),
-            records: records, dev: try readRecords([dev]), log: say
+            records: records, dev: try readRecords([dev]), english: try english.map { try readRecords([$0]) } ?? [],
+            log: say
         )
         try training.run(stopAfter: stopAfter, interrupted: { stop.requested })
     }

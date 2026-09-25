@@ -31,12 +31,15 @@ public struct RunSettings: Codable, Equatable, Sendable {
     public var evaluationsPerEpoch: Int
     public var devTranscribeUtterances: Int
     public var cacheLimitMB: Int
+    /// Records in a language the model already knows (FLEURS English dev) that each transcribing
+    /// evaluation also scores, to watch for forgetting; nil for none.
+    public var english: String?
 
     public init(model: String, train: [String], dev: String, trainRecords: Int, dataDigest: String, seed: UInt64,
                 epochs: Int, utterancesPerStep: Int, tokenBudget: Int, peakRate: Double, warmupFraction: Double,
                 clip: Double, computeType: ComputeType, trainEncoder: Bool, saveEveryMinutes: Double, keepStates: Int,
                 devLossEvery: Int, devLossUtterances: Int, evaluationsPerEpoch: Int, devTranscribeUtterances: Int,
-                cacheLimitMB: Int) {
+                cacheLimitMB: Int, english: String? = nil) {
         self.model = model
         self.train = train
         self.dev = dev
@@ -58,13 +61,15 @@ public struct RunSettings: Codable, Equatable, Sendable {
         self.evaluationsPerEpoch = evaluationsPerEpoch
         self.devTranscribeUtterances = devTranscribeUtterances
         self.cacheLimitMB = cacheLimitMB
+        self.english = english
     }
 
     /// Whether a run with these settings trains as one with `other`'s: the same model, data and
     /// order, optimizer, schedule and precision, with dev numbers on the same utterances. The rest
     /// may change between sessions of a run: the token budget only regroups a step's utterances
     /// into forward passes (the step's gradient is the same, rounded differently), and the cache
-    /// limit, saving and evaluation settings change speed, memory and bookkeeping.
+    /// limit, saving and evaluation settings (the English check included) change speed, memory and
+    /// bookkeeping.
     public func trainsLike(_ other: RunSettings) -> Bool {
         var mine = self
         mine.tokenBudget = other.tokenBudget
@@ -73,6 +78,7 @@ public struct RunSettings: Codable, Equatable, Sendable {
         mine.keepStates = other.keepStates
         mine.devLossEvery = other.devLossEvery
         mine.evaluationsPerEpoch = other.evaluationsPerEpoch
+        mine.english = other.english
         return mine == other
     }
 
@@ -135,12 +141,15 @@ struct EvaluationLine: Codable {
     var kind = "evaluation"
     let step: Int
     let epoch: Double
-    let devLoss: Double
-    let devTargets: Int
+    /// None for the English baseline a new run measures before its first step.
+    let devLoss: Double?
+    let devTargets: Int?
     let characterErrorRate: Double?
     let wordErrorRate: Double?
     let languageAccuracy: Double?
     let truncated: Int?
+    var englishCharacterErrorRate: Double?
+    var englishWordErrorRate: Double?
     let snapshot: String?
     let seconds: Double
     let time: Date
@@ -152,13 +161,14 @@ public final class TrainingRun {
     let records: [Record]
     let devLossRecords: [Record]
     let devTranscribeRecords: [Record]
+    let englishRecords: [Record]
     let trainer: Trainer
     var state: SavedState
     let log: (String) -> Void
 
     /// Opens the run in `folder`: a new one, or the one already there if it trains the same way
     /// (`RunSettings.trainsLike`), recording any other setting that changed in run.json.
-    public init(settings: RunSettings, folder: RunFolder, records: [Record], dev: [Record],
+    public init(settings: RunSettings, folder: RunFolder, records: [Record], dev: [Record], english: [Record] = [],
                 log: @escaping (String) -> Void) async throws {
         guard Examples.digest(records) == settings.dataDigest, records.count == settings.trainRecords else {
             throw RunError.dataChanged
@@ -181,6 +191,7 @@ public final class TrainingRun {
                                         seed: settings.seed)
         devLossRecords = Array(devSample.prefix(settings.devLossUtterances))
         devTranscribeRecords = Array(devSample.prefix(settings.devTranscribeUtterances))
+        englishRecords = english
         self.log = log
 
         Memory.cacheLimit = settings.cacheLimitMB * 1024 * 1024
@@ -210,6 +221,18 @@ public final class TrainingRun {
         var lastSave = Date()
         var sinceSave = 0.0
         let metrics = try MetricsFile(folder.metrics)
+        if state.step == 0 && !englishRecords.isEmpty {
+            // The untrained model's English, for the evaluations to be compared with.
+            let started = Date()
+            let english = try transcribeEnglish(into: folder.url.appending(component: "english-step-0"))
+            try metrics.append(EvaluationLine(
+                step: 0, epoch: 0, devLoss: nil, devTargets: nil, characterErrorRate: nil, wordErrorRate: nil,
+                languageAccuracy: nil, truncated: nil, englishCharacterErrorRate: english.tally.characterErrorRate,
+                englishWordErrorRate: english.tally.wordErrorRate, snapshot: nil,
+                seconds: Date().timeIntervalSince(started), time: Date()
+            ))
+            log("step 0: English " + english.summary + String(format: " (%.0f s)", Date().timeIntervalSince(started)))
+        }
 
         while state.step < last && !interrupted() {
             let started = Date()
@@ -270,6 +293,7 @@ public final class TrainingRun {
         let epochs = Double(state.step) / Double(settings.plan().stepsPerEpoch)
         let (loss, targets) = try Evaluation.loss(trainer.trainable, records: devLossRecords, tokenBudget: settings.tokenBudget)
         var report: TranscriptionReport?
+        var english: TranscriptionReport?
         var snapshotPath: String?
         if transcribing {
             let snapshot = folder.snapshot(step: state.step)
@@ -279,17 +303,31 @@ public final class TrainingRun {
             report = Evaluation.report(transcripts)
             try Transcripts.write(transcripts, to: snapshot.appending(component: "dev.tsv"))
             try JSON.write(report, to: snapshot.appending(component: "eval.json"))
+            if !englishRecords.isEmpty { english = try transcribeEnglish(into: snapshot) }
         }
         let seconds = Date().timeIntervalSince(started)
         try metrics.append(EvaluationLine(
             step: state.step, epoch: epochs, devLoss: loss, devTargets: targets,
             characterErrorRate: report?.tally.characterErrorRate, wordErrorRate: report?.tally.wordErrorRate,
             languageAccuracy: report?.languageAccuracy, truncated: report?.tally.truncated,
+            englishCharacterErrorRate: english?.tally.characterErrorRate, englishWordErrorRate: english?.tally.wordErrorRate,
             snapshot: snapshotPath, seconds: seconds, time: Date()
         ))
         log(String(format: "step %d: dev loss %.4f over %d tokens", state.step, loss, targets)
-            + (report.map { "; dev " + $0.summary } ?? "") + String(format: " (%.0f s)", seconds))
+            + (report.map { "; dev " + $0.summary } ?? "") + (english.map { "; English " + $0.summary } ?? "")
+            + String(format: " (%.0f s)", seconds))
         Memory.clearCache()
+    }
+
+    /// Transcribes the English records with the model as it is now, as the app would (no language
+    /// given), and writes english.tsv and english.json into `folder`.
+    func transcribeEnglish(into folder: URL) throws -> TranscriptionReport {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let transcripts = try Evaluation.transcribe(trainer.trainable.model, records: englishRecords)
+        let report = Evaluation.report(transcripts)
+        try Transcripts.write(transcripts, to: folder.appending(component: "english.tsv"))
+        try JSON.write(report, to: folder.appending(component: "english.json"))
+        return report
     }
 }
 

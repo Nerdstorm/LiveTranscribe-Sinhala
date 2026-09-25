@@ -213,6 +213,13 @@ struct ExportTests {
         return levels * scales.asType(.float32).expandedDimensions(axis: -1) + biases.asType(.float32).expandedDimensions(axis: -1)
     }
 
+    @Test func loadingDequantizesExactlyInFloat32() {
+        let (packed, scales, biases) = Export.quantize(weights(), groupSize: 64, bits: 8, dtype: .bfloat16)
+        let loaded = TrainableModel.dequantize(packed, scales: scales, biases: biases, groupSize: 64, bits: 8)
+        #expect(loaded.dtype == .float32)
+        #expect(MLX.abs(loaded.reshaped(32, 8, 64) - unpacked(packed, scales, biases)).max().item(Float.self) == 0)
+    }
+
     @Test func quantizedWeightsComeBackWithinHalfAStep() {
         let w = weights()
         let (packed, scales, biases) = Export.quantize(w, groupSize: 64, bits: 8, dtype: .bfloat16)

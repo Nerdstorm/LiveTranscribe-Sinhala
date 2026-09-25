@@ -56,6 +56,19 @@ class EnglishTestTests(unittest.TestCase):
         self.assertEqual([os.path.basename(record["audio"]) for record in self.written()], ["a.wav"])
         self.assertIn("missing audio: 1", result.stdout)
 
+    def test_the_dev_split_is_written_to_its_own_file(self):
+        folder = os.path.join(self.fleurs, "data", "en_us")
+        os.makedirs(os.path.join(folder, "audio", "dev"))
+        with open(os.path.join(folder, "dev.tsv"), "w", encoding="utf-8") as table:
+            table.write("3\tc.wav\tA dog ran.\ta dog ran\ta d\t16000\tMALE\n")
+        result = self.run_script("--split", "dev")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fleurs_en_dev: 1", result.stdout)
+        with open(os.path.join(self.root, "jsonl", "fleurs_en_dev.jsonl"), encoding="utf-8") as lines:
+            written = [json.loads(line) for line in lines]
+        self.assertEqual(written, [{"audio": os.path.join(folder, "audio", "dev", "c.wav"),
+                                    "text": "language English<asr_text>A dog ran."}])
+
     def test_a_missing_transcript_file_is_an_error(self):
         os.remove(os.path.join(self.fleurs, "data", "en_us", "test.tsv"))
         result = self.run_script()
