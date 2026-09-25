@@ -29,9 +29,9 @@ mistakes aren't taught back to it. [replay.md](replay.md) has how the labels wer
 numbers and the limits.
 
 - 30,128 utterances pass: 14,166 from FLEURS and 15,962 of the 16,000 picked from LibriSpeech,
-  14.9% of the training mix. If English slips, give the replay a bigger share before anything
-  else: `--train jsonl/train.jsonl --train jsonl/replay.jsonl --train jsonl/replay.jsonl` (the
-  trainer's default is the first two).
+  14.9% of the training mix once. English slipped at that share, so the run passes
+  `replay.jsonl` twice, 26% of the mix ([the run](#the-run), step 6). If English slips again,
+  give the replay a bigger share still before anything else.
 - The labels come from the app's 8-bit MLX model, which is also where training starts
   ([replay.md](replay.md#limits)).
 - FLEURS has no Sinhala, so the Sinhala tests are OpenSLR 52's 24 test speakers and your own
@@ -138,14 +138,28 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
    Both see the same batches in the same order, and in the first epoch every batch is new, so
    their step losses in `metrics.jsonl` compare directly as held-out losses. Each step logs the
    Sinhala and replay losses apart. Keep the rate whose Sinhala loss falls faster without its
-   replay loss rising, and carry that run on: the same command without `--stop-after`.
+   replay loss rising. If the data stays the same, carry that run on: the same command without
+   `--stop-after`.
 
-7. **Train**:
+   On the M4 Pro, 2e-5 won both ways. Over the 108 steps both ran (1e-4 was stopped there), its
+   Sinhala loss was lower on 74 steps and its replay loss on 105, and by step 108 1e-4's replay
+   loss had reached 0.72 against 0.10. But 2e-5 forgets too: exported after 200 steps, it had
+   12% of Sinhala letters wrong and English WER of 6.36% on FLEURS's test split, against 4.96%
+   for the base model and 4.91% for the untrained weights exported the same way. (That English
+   check used the test split; English is now watched on the dev split instead.) So the run
+   doubles the replay's share, to 26% of the mix, and starts afresh.
+
+7. **Train**, with the replay passed twice:
 
    ```bash
-   caffeinate -i $T train --run out/<name> --rate <rate> --english jsonl/fleurs_en_dev.jsonl \
-     >> out/<name>.log 2>&1
+   caffeinate -i $T train --run out/sinhala-2e-5-replay2 --rate 2e-5 \
+     --train jsonl/train.jsonl --train jsonl/replay.jsonl --train jsonl/replay.jsonl \
+     --english jsonl/fleurs_en_dev.jsonl >> out/sinhala-2e-5-replay2.log 2>&1
    ```
+
+   That's 232,390 utterances an epoch, 1,816 steps. Each evaluation logs English WER on FLEURS's
+   dev split beside step 0's. If it rises by more than about a point, stop and give the replay
+   more again, or lower the rate.
 
    Ctrl-C (or `kill`) stops it after the current step and saves. Run the same command to carry
    on; a crash or a reboot loses at most the last 30 minutes. The run folder holds:
