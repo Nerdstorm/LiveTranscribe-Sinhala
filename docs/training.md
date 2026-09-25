@@ -11,30 +11,32 @@ before relying on them.
 | [OpenSLR 52](https://www.openslr.org/52/) (16 zips, about 14.7 GB, CC BY-SA 4.0) | 185,293 utterances, 478 speakers, about 224 h | Sinhala: 172,134 train, 4,411 dev and 8,748 test utterances |
 | `data/speaker-split.tsv` (seed 52) | 442 / 12 / 24 speakers | no test voice is heard in training |
 | `data/loanwords.tsv` | 1,339 words, 415 of them English (E) | English words written in English letters |
-| Replay set (below) | about 30,000 utterances, 15% of the mix | keeps English and the other languages |
+| [FLEURS](https://huggingface.co/datasets/google/fleurs) train splits in English, Chinese, Spanish, French and German (about 7.9 GB, CC BY 4.0), [LibriSpeech](https://www.openslr.org/12/) train-clean-100 (6.4 GB, CC BY 4.0) and `data/replay.tsv` | 30,128 of 30,824 utterances kept, 99.6 h, 14.9% of the mix | replay: keeps the languages the model already knows ([below](#replay-keeping-english)) |
 | Your own dictations | 10–20 clips | the real test: Sinhala as the app will hear it |
 
-`data/` was made from the `utt_spk_text.tsv` that every zip holds, SHA-256
-`471a851decc677d2a70481ef5de75ce73a6b75009a2e3c5175f42131b52fa1de`.
+`speaker-split.tsv` and `loanwords.tsv` were made from the `utt_spk_text.tsv` that every zip
+holds, SHA-256 `471a851decc677d2a70481ef5de75ce73a6b75009a2e3c5175f42131b52fa1de`.
 
 ## Replay: keeping English
 
 Training on Sinhala alone would wear down what the model already does, and LiveTranscribe's
 English eval (1.7% WER against what was meant, at the Medium cleanup level) must not get worse.
-So each epoch mixes in audio in languages the model already knows, labelled **by the base model
-itself** (pseudo-labels): the targets are then exactly its current behaviour, casing and
-punctuation included, rather than another corpus's style.
+So each epoch mixes in speech in English, Chinese, Spanish, French and German (FLEURS, with
+LibriSpeech for more English), labelled **by the base model itself**: the targets are then
+exactly its current behaviour, casing and punctuation included, rather than another corpus's
+style. A label more than 30% from the corpus's own transcript is left out, so the base model's
+mistakes aren't taught back to it. [replay.md](replay.md) has how the labels were made, the
+numbers and the limits.
 
-- Audio: the [FLEURS](https://huggingface.co/datasets/google/fleurs) (CC BY 4.0) train splits for
-  English, Chinese, Spanish, French and German, a few thousand utterances each, topped up with
-  LibriSpeech English (CC BY 4.0) to about 30,000.
-- Labels: base Qwen3-ASR 0.6B, prompted with `language <X><asr_text>`. Drop an utterance whose
-  label is more than 30% WER from FLEURS's own transcript, so the base model's mistakes aren't
-  taught back to it.
+- 30,128 utterances pass: 14,166 from FLEURS and 15,962 of the 16,000 picked from LibriSpeech,
+  14.9% of the training mix. If English slips in step 5, give the replay a bigger share (repeat
+  `replay.jsonl` in the mix) before anything else.
+- **The labels come from the app's 8-bit MLX model, not the bf16 weights being trained**
+  ([replay.md](replay.md#limits)).
 - FLEURS has no Sinhala, so the Sinhala tests are OpenSLR 52's 24 test speakers and your own
   dictations. Common Voice has a little Sinhala (CC0), but downloading it needs an account.
 
-**There's no script for the replay set yet, nor for scoring a checkpoint (steps 5 and 7).**
+**There's no script yet for scoring a checkpoint (steps 5 and 7).**
 
 ## The run
 
@@ -57,6 +59,20 @@ punctuation included, rather than another corpus's style.
    instead of asking. `prepare_data.py` should print train 172134, dev 4411, test 8748 and
    missing audio 0. Read `jsonl/rewrites.tsv`: every rewrite should be one a Sinhala speaker
    would type. The audio is FLAC, which the script reads with librosa **(confirm)**.
+
+   Then the replay set: FLEURS from the Hub (about 7.9 GB), and LibriSpeech (6.4 GB) from a copy
+   on the Hub or else OpenSLR's servers. Each file is checked against its published hash, and a
+   download that breaks off carries on where it stopped when run again:
+
+   ```bash
+   python3 scripts/fetch_fleurs.py --out fleurs --extract
+   python3 scripts/fetch_librispeech.py --out librispeech --extract
+   python3 scripts/prepare_replay.py --fleurs fleurs --librispeech librispeech \
+     --replay data/replay.tsv --out jsonl --check-audio
+   ```
+
+   `prepare_replay.py` should print replay 30128 and missing audio 0. FLEURS's audio is
+   WAV, 32-bit float at 16 kHz, and LibriSpeech's is FLAC at 16 kHz.
 4. **Train (confirm the numbers on a short run first)**:
 
    ```bash
@@ -67,13 +83,15 @@ punctuation included, rather than another corpus's style.
    ```
 
    The trainer shuffles, so joining the files is enough. 32 × 4 = 128 utterances a step, about
-   1,600 steps an epoch with replay. It measures dev loss and saves a checkpoint every
+   1,580 steps an epoch with replay. It measures dev loss and saves a checkpoint every
    `--save_steps`, and keeps only the last 5 (`--save_total_limit`); raise that if the disk
    allows, so step 5 can choose from all of them. A new language may want a higher learning rate
    than Qwen's default of 2e-5: try 1e-4 on a 1,000-step run, and keep the one with the lower
    dev loss.
 5. **Pick the checkpoint** by dev character error rate, not loss, and check its English on the
-   FLEURS English test split against the base model.
+   FLEURS English test split against the base model
+   (`fetch_fleurs.py --out fleurs --languages en_us --splits test --extract`). None of its 350
+   sentences is in the replay set.
 6. **Convert (confirm)**: to MLX 8-bit with mlx-audio's converter, and add `"Sinhala"` to
    `support_languages` in `config.json`.
 7. **Evaluate on a Mac**:

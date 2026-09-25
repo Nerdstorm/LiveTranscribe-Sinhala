@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import make_replay  # noqa: E402
 import make_split  # noqa: E402
 import prepare_data  # noqa: E402
 
@@ -53,6 +54,34 @@ class LoanwordTableTests(unittest.TestCase):
             entry = (category, english, suffix.strip(prepare_data.JOINERS))
             with self.subTest(word=word):
                 self.assertEqual(seen.setdefault(prepare_data.clean(word), entry), entry)
+
+
+class ReplayTableTests(unittest.TestCase):
+    rows = read("replay.tsv")
+    # FLEURS's train utterances per language, at fetch_fleurs.REVISION, and pick_librispeech.py's
+    # default count.
+    utterances = {"en_us": 2602, "cmn_hans_cn": 3246, "es_419": 2796, "fr_fr": 3193, "de_de": 2987,
+                  "librispeech": 16000}
+
+    def test_has_every_fleurs_train_utterance_and_the_librispeech_picks_once(self):
+        self.assertEqual(collections.Counter(row[0] for row in self.rows), self.utterances)
+        self.assertEqual(len({(row[0], row[1]) for row in self.rows}), len(self.rows))
+
+    def test_every_row_is_well_formed(self):
+        for number, row in enumerate(self.rows, 1):
+            with self.subTest(line=number, row=row):
+                self.assertEqual(len(row), 4)
+                code, file, error, label = row
+                self.assertRegex(file, r"^[0-9]+\.wav$" if code != "librispeech" else r"^[0-9]+-[0-9]+-[0-9]{4}\.flac$")
+                self.assertRegex(error, r"^[0-9]+\.[0-9]{3}$")
+                self.assertEqual(label, label.strip())
+
+    def test_is_in_source_then_file_order(self):
+        order = [(list(make_replay.SOURCES).index(code), file) for code, file, _, _ in self.rows]
+        self.assertEqual(order, sorted(order))
+
+    def test_prepare_replay_can_read_it(self):
+        self.assertEqual(len(make_replay.read_replay(ROOT / "data" / "replay.tsv")), len(self.rows))
 
 
 if __name__ == "__main__":
