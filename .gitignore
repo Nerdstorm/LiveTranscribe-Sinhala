@@ -1,9 +1,18 @@
 # The corpus and everything made from it during a run
 asr_sinhala/
 *.zip
+fleurs/
+librispeech/
+picked/
+labels/
 jsonl/
 out/
 work/
+
+# The labeller's build, and the coverage data an instrumented build leaves where it runs
+tools/pseudo-label/.build/
+tools/pseudo-label/.swiftpm/
+*.profraw
 
 __pycache__/
 .DS_Store
