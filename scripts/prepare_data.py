@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes Qwen3-ASR fine-tuning files for Sinhala from OpenSLR 52.
+r"""Writes Qwen3-ASR fine-tuning files for Sinhala from OpenSLR 52.
 
     prepare_data.py --data-dir <extracted asr_sinhala> --split data/speaker-split.tsv \
         --loanwords data/loanwords.tsv --out <dir> [--categories E] [--check-audio]
