@@ -60,6 +60,36 @@ public struct RunSettings: Codable, Equatable, Sendable {
         self.cacheLimitMB = cacheLimitMB
     }
 
+    /// Whether a run with these settings trains as one with `other`'s: the same model, data and
+    /// order, optimizer, schedule and precision, with dev numbers on the same utterances. The rest
+    /// may change between sessions of a run: the token budget only regroups a step's utterances
+    /// into forward passes (the step's gradient is the same, rounded differently), and the cache
+    /// limit, saving and evaluation settings change speed, memory and bookkeeping.
+    public func trainsLike(_ other: RunSettings) -> Bool {
+        var mine = self
+        mine.tokenBudget = other.tokenBudget
+        mine.cacheLimitMB = other.cacheLimitMB
+        mine.saveEveryMinutes = other.saveEveryMinutes
+        mine.keepStates = other.keepStates
+        mine.devLossEvery = other.devLossEvery
+        mine.evaluationsPerEpoch = other.evaluationsPerEpoch
+        return mine == other
+    }
+
+    /// Each setting that differs from `other`'s, as "name: other's value → this one's", by run.json's names.
+    public func differences(from other: RunSettings) -> [String] {
+        func object(_ settings: RunSettings) -> [String: NSObject] {
+            guard let data = try? JSONEncoder().encode(settings),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: NSObject] else { return [:] }
+            return object
+        }
+        let mine = object(self), theirs = object(other)
+        return Set(mine.keys).union(theirs.keys).sorted().compactMap { key in
+            mine[key] == theirs[key] ? nil
+                : "\(key): \(theirs[key].map { "\($0)" } ?? "none") → \(mine[key].map { "\($0)" } ?? "none")"
+        }
+    }
+
     public func plan() -> EpochPlan {
         EpochPlan(recordCount: trainRecords, utterancesPerStep: utterancesPerStep, seed: seed)
     }
@@ -126,7 +156,8 @@ public final class TrainingRun {
     var state: SavedState
     let log: (String) -> Void
 
-    /// Opens the run in `folder`: a new one, or the one already there if its settings match.
+    /// Opens the run in `folder`: a new one, or the one already there if it trains the same way
+    /// (`RunSettings.trainsLike`), recording any other setting that changed in run.json.
     public init(settings: RunSettings, folder: RunFolder, records: [Record], dev: [Record],
                 log: @escaping (String) -> Void) async throws {
         guard Examples.digest(records) == settings.dataDigest, records.count == settings.trainRecords else {
@@ -134,7 +165,11 @@ public final class TrainingRun {
         }
         if FileManager.default.fileExists(atPath: folder.settings.path) {
             let saved = try JSON.read(RunSettings.self, from: folder.settings)
-            guard saved == settings else { throw RunError.settingsDiffer(saved: saved, given: settings) }
+            guard settings.trainsLike(saved) else { throw RunError.settingsDiffer(saved: saved, given: settings) }
+            if settings != saved {
+                log("Carrying on with changed settings: " + settings.differences(from: saved).joined(separator: "; "))
+                try JSON.write(settings, to: folder.settings)
+            }
         } else {
             try FileManager.default.createDirectory(at: folder.url, withIntermediateDirectories: true)
             try JSON.write(settings, to: folder.settings)
@@ -267,8 +302,8 @@ public enum RunError: Error, CustomStringConvertible {
         case .dataChanged:
             "the training records aren't the ones in run.json; start a new run folder"
         case .settingsDiffer(let saved, let given):
-            "the run folder's run.json has other settings; pass the same options, or use a new folder.\n"
-                + "saved: \((try? JSON.line(saved)) ?? "")\ngiven: \((try? JSON.line(given)) ?? "")"
+            "the run folder's run.json trains another way; pass its options, or use a new folder: "
+                + given.differences(from: saved).joined(separator: "; ")
         }
     }
 }

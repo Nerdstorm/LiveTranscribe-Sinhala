@@ -261,3 +261,33 @@ struct ExportTests {
             == #"{"support_languages": ["Chinese", "English", "Sinhala"], "x": 1}"#)
     }
 }
+
+struct RunSettingsTests {
+    private func settings(tokenBudget: Int = 4096, peakRate: Double = 2e-5, cacheLimitMB: Int = 4096) -> RunSettings {
+        RunSettings(model: "base", train: ["train.jsonl", "replay.jsonl"], dev: "dev.jsonl", trainRecords: 1000,
+                    dataDigest: "digest", seed: 52, epochs: 1, utterancesPerStep: 128, tokenBudget: tokenBudget,
+                    peakRate: peakRate, warmupFraction: 0.02, clip: 1, computeType: .bfloat16, trainEncoder: true,
+                    saveEveryMinutes: 30, keepStates: 2, devLossEvery: 200, devLossUtterances: 1000,
+                    evaluationsPerEpoch: 4, devTranscribeUtterances: 500, cacheLimitMB: cacheLimitMB)
+    }
+
+    @Test func aRunCarriesOnWithAnotherTokenBudgetOrCacheLimit() {
+        let saved = settings()
+        let given = settings(tokenBudget: 3072, cacheLimitMB: 1024)
+        #expect(given.trainsLike(saved))
+        #expect(given.differences(from: saved) == ["cacheLimitMB: 4096 → 1024", "tokenBudget: 4096 → 3072"])
+    }
+
+    @Test func aRunDoesNotCarryOnWithAnotherLearningRate() {
+        let saved = settings()
+        let given = settings(peakRate: 1e-4)
+        #expect(!given.trainsLike(saved))
+        #expect(given.differences(from: saved).count == 1)
+        #expect(given.differences(from: saved)[0].hasPrefix("peakRate: "))
+    }
+
+    @Test func theSameSettingsHaveNoDifferences() {
+        #expect(settings().trainsLike(settings()))
+        #expect(settings().differences(from: settings()).isEmpty)
+    }
+}

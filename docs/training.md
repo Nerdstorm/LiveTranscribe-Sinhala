@@ -143,7 +143,9 @@ swapping, steps slow down by half or more. Leave about 50 GB of disk free: two s
 
    Ctrl-C (or `kill`) stops it after the current step and saves. Run the same command to carry
    on; a crash or a reboot loses at most the last 30 minutes. The run folder holds:
-   - `run.json`, the settings, which must match to carry on;
+   - `run.json`, the settings. To carry on, the model, data, optimizer, schedule and precision
+     must match; the token budget, `--cache-limit-mb` and the saving and evaluation options may
+     change;
    - `state-<step>/`, the last two saved states;
    - `snapshots/step-<N>/`, bf16 weights with `dev.tsv` and `eval.json`, four times an epoch;
    - `metrics.jsonl`, every step and every evaluation.
