@@ -49,8 +49,8 @@ as it was trained.**
 
 Before a long run: plug the Mac in, and don't run LiveTranscribe's `make eval` or `make bench` at
 the same time, as they'd compete for the GPU. Training takes about 35 GB of memory, so on a 48 GB
-Mac close what else holds a lot (a Linux VM, several editors and browsers): once macOS starts
-swapping, steps slow down by half or more. Leave about 50 GB of disk free: two saved states of
+Mac close what else holds a lot (a Linux VM, several editors and browsers): while macOS swaps,
+steps take about half as long again. Leave about 50 GB of disk free: two saved states of
 9.4 GB each (fp32 weights and the optimizer's two moments), a third while one is written, and a
 1.6 GB snapshot at each evaluation.
 
@@ -119,9 +119,10 @@ swapping, steps slow down by half or more. Leave about 50 GB of disk free: two s
    float32's. A larger token budget means fewer passes a step, but 8192 doesn't fit in 48 GB. A
    frozen encoder (`--freeze-encoder`) would save a quarter of the time, but only the decoder
    would learn Sinhala's sounds. Peak memory counts the weights, the optimizer's moments and a
-   pass's activations. The bench ran with the GPU to itself and little else open. The first real
-   runs shared the Mac with a Linux VM, LiveTranscribe with its model loaded and a browser, and
-   macOS swapped: steps took 26 s on average, which makes an epoch about 11.5 hours.
+   pass's activations. The bench ran with the GPU to itself. The first real run shared the Mac
+   with a Linux VM, LiveTranscribe with its model loaded and a browser: for its first hour, while
+   macOS swapped them out to make room (and builds ran alongside), steps took about 26 s, and
+   then 18–19 s, the bench's speed. An epoch is about 8.5 hours of steps, plus the evaluations.
 
 6. **Learning rate**: two runs with the real run's settings, stopped early:
 
