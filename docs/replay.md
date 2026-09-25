@@ -16,16 +16,16 @@ included, rather than another corpus's conventions.
 
 | Source | Utterances | Hours | Kept | Kept hours | Median error |
 |---|---:|---:|---:|---:|---:|
-| FLEURS English (`en_us`) | 2,602 | 7.5 | 2,567 (98.7%) | 7.4 | 0.000 |
-| FLEURS Chinese (`cmn_hans_cn`) | 3,246 | 9.7 | 3,203 (98.7%) | 9.6 | 0.000 |
-| FLEURS Spanish (`es_419`) | 2,796 | 8.8 | 2,258 (80.8%) | 7.0 | 0.061 |
-| FLEURS French (`fr_fr`) | 3,193 | 10.3 | 3,118 (97.7%) | 10.1 | 0.038 |
-| FLEURS German (`de_de`) | 2,987 | 9.0 | 2,913 (97.5%) | 8.8 | 0.056 |
-| LibriSpeech (`librispeech`) | 16,000 | 56.5 | 15,952 (99.7%) | 56.5 | 0.000 |
-| **Total** | **30,824** | **101.9** | **30,011 (97.4%)** | **99.3** | **0.018** |
+| FLEURS English (`en_us`) | 2,602 | 7.5 | 2,574 (98.9%) | 7.4 | 0.000 |
+| FLEURS Chinese (`cmn_hans_cn`) | 3,246 | 9.7 | 3,214 (99.0%) | 9.6 | 0.000 |
+| FLEURS Spanish (`es_419`) | 2,796 | 8.8 | 2,286 (81.8%) | 7.1 | 0.049 |
+| FLEURS French (`fr_fr`) | 3,193 | 10.3 | 3,150 (98.7%) | 10.2 | 0.032 |
+| FLEURS German (`de_de`) | 2,987 | 9.0 | 2,942 (98.5%) | 8.9 | 0.048 |
+| LibriSpeech (`librispeech`) | 16,000 | 56.5 | 15,962 (99.8%) | 56.5 | 0.000 |
+| **Total** | **30,824** | **101.9** | **30,128 (97.7%)** | **99.6** | **0.000** |
 
 "Kept" is what `prepare_replay.py` keeps: labels at most 0.3 from the corpus's transcript. English
-is 18,519 of the 30,011 kept utterances (62%), and 63.8 of the 99.3 hours. The median error is
+is 18,536 of the 30,128 kept utterances (62%), and 63.8 of the 99.6 hours. The median error is
 the label's word error rate against the corpus's transcript (character error rate for Chinese).
 
 - **FLEURS** ([google/fleurs](https://huggingface.co/datasets/google/fleurs), revision `70bb2e8`):
@@ -44,18 +44,31 @@ the label's word error rate against the corpus's transcript (character error rat
 1. `fetch_fleurs.py --extract` and `fetch_librispeech.py --extract` fetched the corpora (7.9 and
    6.4 GB), checked each file against its published hash (the Hub's SHA-256 or git id, OpenSLR's
    MD5) and extracted them.
-2. `pick_librispeech.py --shards 2` picked the LibriSpeech utterances and linked them into two
-   folders, to label them in two processes at once.
+2. `pick_librispeech.py` picked the LibriSpeech utterances and linked them into folders
+   (`--shards`), to label them in several processes at once.
 3. `tools/pseudo-label` labelled every recording with `mlx-community/Qwen3-ASR-0.6B-8bit`
-   (revision `89e96d9`), the model LiveTranscribe ships, loaded through mlx-audio-swift at the
-   app's revision (`d302a5c`). It tells the model the language, so the prompt ends
-   `language English<asr_text>` just as each training line's text begins, and it decodes greedily
-   with the model's defaults. On an M4 Pro it took 4.1 hours of the model's time for 101.9 hours
-   of audio, 25 times real time for each process; with two processes at once, about two hours
-   in all. The labels are repeatable: a sample labelled twice, alone and alongside another
-   language, came out the same.
+   (revision `89e96d9`), the model LiveTranscribe ships, loaded through mlx-audio-swift `01dec7c`
+   (upstream's main branch on 18 September 2026). It tells the model the language, so the prompt
+   ends `language English<asr_text>` just as each training line's text begins, and it decodes
+   greedily with the model's defaults. The labels are repeatable: a sample labelled twice, alone
+   and alongside another language, came out the same.
 4. `make_replay.py` scored each label against the corpus's transcript and wrote
    `data/replay.tsv`.
+
+The set was labelled twice. The first time, at the app's revision of mlx-audio-swift (`d302a5c`),
+took 4.1 hours of the model's time on an M4 Pro for 101.9 hours of audio: 25 times real time for
+each process, and about two hours in all with two processes at once. That revision computes
+Qwen3-ASR's audio features differently from the feature extractor Qwen trained it with (an HTK
+mel scale and a symmetric window, where Qwen's uses the Slaney scale and a periodic window).
+Upstream fixed that in [#247](https://github.com/Blaizzy/mlx-audio-swift/pull/247), after its last
+release. The fix takes the base model's word error rate on FLEURS's English test split from 5.46%
+to 4.96%. The fine-tune trains on the corrected features, so the set was labelled again at
+`01dec7c`, and those are the labels committed. That run used four processes at once, sharing the
+GPU with a training test for most of the time, and took two hours.
+
+The corrected features changed 10,633 of the 30,824 labels (34.5%). Of those, 4,226 moved closer
+to the corpus's transcript and 1,890 further away. 154 labels came within the cut and 37 left it,
+so the set keeps 117 more.
 
 To make it again, on a Mac with Apple silicon and Xcode:
 
@@ -98,33 +111,35 @@ normalisation evens out.
 FLEURS's Chinese transcripts follow a transliterated name with its original spelling in brackets,
 "克里斯托弗·加西亚（Christopher Garcia）", and the speakers don't read it. So a Chinese label is
 scored against the transcript both with and without bracketed text that has no Chinese characters
-in it, and the closer of the two counts. That decides 138 of the 3,246 Chinese labels: 98.7% of
-them are within the cut with the rule, 94.4% without it.
+in it, and the closer of the two counts. That decides 132 of the 3,246 Chinese labels: 99.0% of
+them are within the cut with the rule, 94.9% without it.
 
 The error is kept in the table, so a stricter cut (`prepare_replay.py --max-error`) needs no new
 labels.
 
 ## What the cut drops, and what it keeps
 
-The cut drops 813 of the 30,824 labels (2.6%):
+The cut drops 696 of the 30,824 labels (2.3%):
 
 - **490 FLEURS Spanish recordings are silent.** 490 of the 2,796 `es_419` train recordings
-  (17.5%) hold nothing but zeros, and the other four languages have none. Told the language is
-  Spanish, the model writes one word and stops ("El." 439 times, "No." 37, "Puedes." 10); left
-  to choose, as the app leaves it, it answers `language None`, no speech, with an empty
-  transcript. All 490 are over the cut, so none reaches training.
-- **Numbers written another way**: 123 of the other 323 drops. The model sometimes spells out a
-  number the transcript writes in digits ("the two thousand and nine season" for "the 2009
-  season", "zweitausendzweihundertfünfzig" for "2.250"), and in a short sentence that's enough
-  to pass 0.3.
-- **Misheard names and rare words**, mostly in short sentences: "Maruko Hideo" for
-  Maroochydore, "Guk-Inseln" for the Cook Islands.
-- **LibriSpeech's 48** (0.3%) are mostly transcripts in dialect spelling, which the model writes
-  in standard English ("And that minds me of an owl" for "AN DAT MINES ME A OWL"), and names or
-  Latin phrases.
-- Odd ones: 3 Chinese labels in Traditional characters, which count as wrong against a Simplified
-  transcript; 1 empty English label; and 3 English labels longer than their transcript and
-  mostly wrong (error over 1).
+  (17.5%) hold no speech: their loudest sample is about one step of 16-bit audio (−88 to
+  −90 dBFS), where the quietest recording with speech peaks near −38 dBFS. The other four
+  languages have none. Told the language is Spanish, the model writes one word and stops ("El."
+  435 times, "Puedes." 30, "Puedo." 15); left to choose, as the app leaves it, it answers
+  `language None`, no speech, with an empty transcript. All 490 are over the cut, so none reaches
+  training.
+- **Numbers written another way**: 61 of the other 206 drops. The model sometimes spells out a
+  number the transcript writes in digits ("two to three kilometers" for "2-3 km", "fünf zu drei"
+  for "5:3"), and in a short sentence that's enough to pass 0.3.
+- **Misheard names and rare words**, mostly in short sentences: "Maru Shidori then defeated
+  Kabulter" for "Maroochydore then defeated Caboolture", "Asirbeitjan" for Aserbaidschan.
+- **LibriSpeech's 38** (0.2%) are mostly transcripts in dialect spelling, which the model writes
+  in standard English ("And that minds me of an owl" for "AN DAT MINES ME A OWL"), names, and
+  old spellings in short sentences ("I will return tomorrow." for "I WILL RETURN TO MORROW").
+- Odd ones: 2 Chinese labels in Traditional characters, which count as wrong against a Simplified
+  transcript; 4 recordings in which the speaker reads the sentence two or three times, so the
+  label runs longer than the transcript (error over 1); and one English sentence that came out
+  as a single word ("The."), where the first labelling left it empty.
 
 What the cut keeps is the model's ordinary behaviour: in a long sentence, a number spelled out
 or a name misheard stays under 0.3.

@@ -11,7 +11,7 @@ before relying on them.
 | [OpenSLR 52](https://www.openslr.org/52/) (16 zips, about 14.7 GB, CC BY-SA 4.0) | 185,293 utterances, 478 speakers, about 224 h | Sinhala: 172,134 train, 4,411 dev and 8,748 test utterances |
 | `data/speaker-split.tsv` (seed 52) | 442 / 12 / 24 speakers | no test voice is heard in training |
 | `data/loanwords.tsv` | 1,339 words, 415 of them English (E) | English words written in English letters |
-| [FLEURS](https://huggingface.co/datasets/google/fleurs) train splits in English, Chinese, Spanish, French and German (about 7.9 GB, CC BY 4.0), [LibriSpeech](https://www.openslr.org/12/) train-clean-100 (6.4 GB, CC BY 4.0) and `data/replay.tsv` | 30,011 of 30,824 utterances kept, 99.3 h, 14.8% of the mix | replay: keeps the languages the model already knows ([below](#replay-keeping-english)) |
+| [FLEURS](https://huggingface.co/datasets/google/fleurs) train splits in English, Chinese, Spanish, French and German (about 7.9 GB, CC BY 4.0), [LibriSpeech](https://www.openslr.org/12/) train-clean-100 (6.4 GB, CC BY 4.0) and `data/replay.tsv` | 30,128 of 30,824 utterances kept, 99.6 h, 14.9% of the mix | replay: keeps the languages the model already knows ([below](#replay-keeping-english)) |
 | Your own dictations | 10–20 clips | the real test: Sinhala as the app will hear it |
 
 `speaker-split.tsv` and `loanwords.tsv` were made from the `utt_spk_text.tsv` that every zip
@@ -28,8 +28,8 @@ style. A label more than 30% from the corpus's own transcript is left out, so th
 mistakes aren't taught back to it. [replay.md](replay.md) has how the labels were made, the
 numbers and the limits.
 
-- 30,011 utterances pass: 14,059 from FLEURS and 15,952 of the 16,000 picked from LibriSpeech,
-  14.8% of the training mix. If English slips in step 5, give the replay a bigger share (repeat
+- 30,128 utterances pass: 14,166 from FLEURS and 15,962 of the 16,000 picked from LibriSpeech,
+  14.9% of the training mix. If English slips in step 5, give the replay a bigger share (repeat
   `replay.jsonl` in the mix) before anything else.
 - **The labels come from the app's 8-bit MLX model, not the bf16 weights being trained**
   ([replay.md](replay.md#limits)).
@@ -71,7 +71,7 @@ numbers and the limits.
      --replay data/replay.tsv --out jsonl --check-audio
    ```
 
-   `prepare_replay.py` should print replay 30011 and missing audio 0. FLEURS's audio is
+   `prepare_replay.py` should print replay 30128 and missing audio 0. FLEURS's audio is
    WAV, 32-bit float at 16 kHz, and LibriSpeech's is FLAC at 16 kHz.
 4. **Train (confirm the numbers on a short run first)**:
 

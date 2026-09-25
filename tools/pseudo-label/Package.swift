@@ -14,8 +14,11 @@ let package = Package(
     name: "PseudoLabel",
     platforms: [.macOS(.v14)],
     dependencies: [
-        // The revision LiveTranscribe uses, so the labels are what the app's model writes.
-        .package(url: "https://github.com/Blaizzy/mlx-audio-swift.git", revision: "d302a5c6080d2bb97bae38c7418f82abb76013b6"),
+        // Upstream main as of 2026-09-18, past LiveTranscribe's v0.1.3 pin, for its fix to
+        // Qwen3-ASR's audio features (Blaizzy/mlx-audio-swift#247: the Slaney mel scale and a
+        // periodic Hann window, as Qwen's own feature extractor computes them). The fine-tune
+        // trains on these features, and the app must move to this revision to run it as trained.
+        .package(url: "https://github.com/Blaizzy/mlx-audio-swift.git", revision: "01dec7c9bdce3088a6b6b7ab9f2e403458195efb"),
     ],
     targets: [
         .target(name: "LabelFile"),
