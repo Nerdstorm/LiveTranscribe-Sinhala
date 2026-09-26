@@ -66,8 +66,8 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
    python3 scripts/prepare_replay.py --fleurs fleurs --librispeech librispeech \
      --replay data/replay.tsv --out jsonl --check-audio
    python3 scripts/fetch_fleurs.py --out fleurs --languages en_us --splits test,dev --extract
-   python3 scripts/prepare_english_test.py --fleurs fleurs --out jsonl --check-audio
-   python3 scripts/prepare_english_test.py --fleurs fleurs --out jsonl --split dev --check-audio
+   python3 scripts/prepare_fleurs_test.py --fleurs fleurs --out jsonl --check-audio
+   python3 scripts/prepare_fleurs_test.py --fleurs fleurs --out jsonl --split dev --check-audio
    ```
 
    Every zip holds the same `LICENSE` and `utt_spk_text.tsv`, and `-n` keeps the first copy
@@ -244,7 +244,38 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
     - Every recording was recognised as Sinhala, and 730 of 889 English words (82%) came out in
       English letters.
     - English: FLEURS WER 5.24%, against the base model's 4.96%.
+    - The other replay languages, on FLEURS test, against the base model:
+
+      | Language | Measure | Fine-tune | Base |
+      |---|---|---:|---:|
+      | Chinese (945 recordings) | CER | 4.70% | 4.65% |
+      | Spanish (908) | WER | 5.61% | 4.70% |
+      | French (676) | WER | 10.07% | 8.16% |
+      | German (862) | WER | 8.70% | 6.54% |
+
+      **Spanish, French and German lost 19% to 33% relative, against English's 6%, although each
+      had 2,286 to 3,150 replay recordings. Chinese, with 3,214, held.** The extra errors are real
+      ones, not a change of style:
+      - German compounds split ("Wüsten sand");
+      - French agreement ("leur" for "leurs");
+      - more names and rare words misheard;
+      - a few abbreviations written out ("km", "usw.").
+
+      Why Chinese held and they didn't is an open question.
     - No transcript was cut short or ran away.
+
+    The other replay languages need their FLEURS test splits, about 2 GB:
+
+    ```bash
+    python3 scripts/fetch_fleurs.py --out fleurs --languages cmn_hans_cn,es_419,fr_fr,de_de --splits test --extract
+    for code in cmn_hans_cn es_419 fr_fr de_de; do
+      python3 scripts/prepare_fleurs_test.py --fleurs fleurs --out jsonl --language $code --check-audio
+    done
+    for lang in zh es fr de; do
+      $T transcribe --model out/export/Qwen3-ASR-0.6B-Sinhala-8bit --records jsonl/fleurs_${lang}_test.jsonl --out out/eval/fleurs-$lang.tsv
+      $T transcribe --model mlx-community/Qwen3-ASR-0.6B-8bit --records jsonl/fleurs_${lang}_test.jsonl --out out/eval/fleurs-$lang-base.tsv
+    done
+    ```
 
     Then your own dictations, and
     LiveTranscribe's own English eval on mlx-audio-swift `01dec7c`. Its Bench, like the app, loads
