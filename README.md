@@ -8,8 +8,9 @@ The aim is one model for English, the other languages Qwen3-ASR already knows, a
 Sinhala comes out in Sinhala script, with English words in English letters, as people type it:
 "meeting එක cancel කරන්න".
 
-**Status: the training data is prepared and tested, and the trainer is built and checked on a
-Mac. The model hasn't been trained yet ([docs/training.md](docs/training.md)).**
+**Status: the first epoch is training on a Mac. A quarter of the way through, it gets 9% of
+Sinhala letters wrong on held-out speakers, and blending it with the base model keeps its English
+within half a point ([docs/training.md](docs/training.md)).**
 
 ## Why fine-tune
 

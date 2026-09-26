@@ -158,8 +158,10 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
    ```
 
    That's 232,390 utterances an epoch, 1,816 steps. Each evaluation logs English WER on FLEURS's
-   dev split beside step 0's. If it rises by more than about a point, stop and give the replay
-   more again, or lower the rate.
+   dev split beside step 0's. It rises even so: a quarter of the way through, 7.19% against
+   5.40%. That's real forgetting, not a change of style: names and rare words spelled by sound
+   ("Uthappa" as "Utapala"), and small words slipping ("safaris are" as "safari is a"). More
+   replay only slows it in proportion, so the run carries on and step 9 blends it back.
 
    Ctrl-C (or `kill`) stops it after the current step and saves. Run the same command to carry
    on; a crash or a reboot loses at most the last 30 minutes. The run folder holds:
@@ -174,15 +176,30 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
    - `metrics.jsonl`, every step and every evaluation, with English WER and CER beside dev
      CER.
 
-8. **Pick the snapshot** with the lowest dev CER in `metrics.jsonl`, not the lowest loss, among
-   those whose English WER hasn't risen past step 0's by more than you'll accept.
+8. **Pick the snapshot and the blend.** `export --blend <share>` keeps that share of each
+   fine-tuned weight and takes the rest from the base model (weight-space ensembling, as in
+   WiSE-FT). Moving back towards the base model gives English back faster than it takes Sinhala
+   away, until Sinhala falls off a cliff. The step-454 snapshot, exported at 8-bit, on 500
+   Sinhala dev recordings and FLEURS English dev (the base model scores 5.41%):
+
+   | Fine-tuned share | Sinhala CER | English WER |
+   |---|---:|---:|
+   | 1.0 | 9.32% | 7.22% |
+   | 0.75 | 9.93% | 6.12% |
+   | 0.65 | 11.40% | 5.88% |
+   | 0.5 | 56.62% | 5.70% |
+
+   Export the last snapshots at a few shares, transcribe both dev sets (step 10's commands, with
+   `out/eval/dev-sample500.jsonl` and `jsonl/fleurs_en_dev.jsonl`), and take the lowest Sinhala
+   CER whose English WER is within half a point of the base model's. `--blend-audio` gives the
+   audio encoder its own share, but splitting it never beat an even blend.
 
 9. **Export** it as a model folder the app loads, quantised like the base model (text model
    8-bit, audio encoder bf16) and with `Sinhala` in `support_languages`:
 
    ```bash
-   $T export --weights out/<name>/snapshots/step-<N> --out out/export/Qwen3-ASR-0.6B-Sinhala-8bit \
-     --check jsonl/test.jsonl
+   $T export --weights out/<name>/snapshots/step-<N> --blend <share> \
+     --out out/export/Qwen3-ASR-0.6B-Sinhala-8bit --check jsonl/test.jsonl
    ```
 
 10. **Evaluate** the export as the app runs it, with no language given:
