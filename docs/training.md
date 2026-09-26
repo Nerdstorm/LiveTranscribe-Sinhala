@@ -230,8 +230,18 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
     - No transcript was cut short or ran away.
 
     Then your own dictations, and
-    LiveTranscribe's own English eval on mlx-audio-swift `01dec7c`. Its Bench loads models by
-    Hugging Face repo id, so it needs the export published, or an option to load a local folder.
+    LiveTranscribe's own English eval on mlx-audio-swift `01dec7c`. Its Bench, like the app, loads
+    models by Hugging Face repo id, and uses one it finds in mlx-audio's cache without asking the
+    Hub. So to try an export before publishing it, clone it there under the id it will have
+    (`cp -c` takes no extra space on APFS):
+
+    ```bash
+    D=~/.cache/huggingface/hub/mlx-audio/Nerdstorm_Qwen3-ASR-0.6B-Sinhala-8bit
+    mkdir -p $D && cp -c out/export/Qwen3-ASR-0.6B-Sinhala-8bit/* $D/
+    ```
+
+    Nothing checks that copy against the Hub again, so move the folder to the Trash before trying
+    the published model.
 
 ## The audio features
 
