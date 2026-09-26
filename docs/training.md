@@ -236,6 +236,11 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
       speakers read from a shared pool, and 71% of the test recordings (72% of dev) read a sentence
       that someone in train also reads. Those score 6.06%. Dictation is all new sentences, so the
       7.08% is the number to expect.
+    - The 2,409 of them with no English words score 6.85% and 30.39%, so English words aren't what
+      makes WER high. One wrong character makes a whole word wrong, and a word here averages about
+      five characters, counting vowel signs. Of the words written differently, 37% are one
+      character off, often in the ending (කියල written කියලා), and 14% of word errors are only where
+      a space goes.
     - Every recording was recognised as Sinhala, and 730 of 889 English words (82%) came out in
       English letters.
     - English: FLEURS WER 5.24%, against the base model's 4.96%.
