@@ -191,8 +191,12 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
 
    Export the last snapshots at a few shares, transcribe both dev sets (step 10's commands, with
    `out/eval/dev-sample500.jsonl` and `jsonl/fleurs_en_dev.jsonl`), and take the lowest Sinhala
-   CER whose English WER is within half a point of the base model's. `--blend-audio` gives the
-   audio encoder its own share, but splitting it never beat an even blend.
+   CER whose English WER is within half a point of the base model's, with room to spare: the
+   English dev set is 394 recordings, so a few tenths of a point is noise, and the test sets get
+   one look. At the end of the first epoch, 0.9 gave 5.74% and 6.03%, 0.85 gave 6.01% and 5.88%,
+   and 0.8 gave 6.10% and 5.69%; 0.8 was chosen. Blending also stopped a repetition loop the
+   unblended model fell into on one English recording. `--blend-audio` gives the audio encoder its
+   own share, but splitting it never beat an even blend.
 
 9. **Export** it as a model folder the app loads, quantised like the base model (text model
    8-bit, audio encoder bf16) and with `Sinhala` in `support_languages`:

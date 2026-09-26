@@ -8,9 +8,10 @@ The aim is one model for English, the other languages Qwen3-ASR already knows, a
 Sinhala comes out in Sinhala script, with English words in English letters, as people type it:
 "meeting එක cancel කරන්න".
 
-**Status: the first epoch is training on a Mac. A quarter of the way through, blended with the
-base model so that its English stays within half a point, it gets 11% of Sinhala letters wrong on
-held-out speakers ([docs/training.md](docs/training.md)).**
+**Status: the first model is trained, on a Mac. On OpenSLR 52's 24 test speakers, whom it never
+heard, it gets 6.4% of Sinhala characters wrong (27.5% of words), recognises every recording as
+Sinhala and writes 82% of English words in English letters. Its English WER on FLEURS is 5.24%,
+against the base model's 4.96% ([docs/training.md](docs/training.md)).**
 
 ## Why fine-tune
 
