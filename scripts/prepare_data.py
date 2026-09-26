@@ -2,16 +2,24 @@
 r"""Writes Qwen3-ASR fine-tuning files for Sinhala from OpenSLR 52.
 
     prepare_data.py --data-dir <extracted asr_sinhala> --split data/speaker-split.tsv \
-        --loanwords data/loanwords.tsv --out <dir> [--categories E] [--check-audio]
+        --loanwords data/loanwords.tsv --out <dir> [--categories E] [--check-audio] \
+        [--hold-out-sentences]
 
 Reads <data-dir>/utt_spk_text.tsv (utterance, speaker, text) and writes train.jsonl, dev.jsonl
-and test.jsonl, one line per utterance in the format of Qwen's qwen3_asr_sft.py:
+and test.jsonl, plus dev_new.jsonl and test_new.jsonl (below), one line per utterance in the
+format of Qwen's qwen3_asr_sft.py:
 
     {"audio": "<data-dir>/data/<first 2 characters>/<utterance>.flac",
      "text": "language Sinhala<asr_text><transcript>"}
 
 The split is by speaker (speaker-split.tsv: speaker<TAB>train|dev|test), so no voice in dev or
 test is heard in training. Every speaker must have a split: a missing one stops the run.
+
+Speakers read from a shared pool of sentences, though, so most dev and test sentences are also
+read by someone in train. dev_new.jsonl and test_new.jsonl hold only the dev and test recordings
+whose sentence isn't in train.jsonl, ignoring case and punctuation: the measure for speech the
+model hasn't seen written. --hold-out-sentences instead leaves out of train.jsonl every recording
+of a sentence that's in dev or test, so all of dev and test is new in both voice and sentence.
 
 Transcripts are cleaned (NFC; zero-width joiners at the edges of a word dropped, the ones inside
 conjuncts such as ශ්‍රී kept) and English loanwords are written in English letters, as the app
@@ -98,6 +106,29 @@ def audio_path(data_dir, utterance):
     return os.path.join(data_dir, "data", utterance[:2], f"{utterance}.flac")
 
 
+def sentence_key(text):
+    """The sentence to compare across splits: casefolded, without punctuation, spaces collapsed.
+    Joiners stay, since they are part of a word's spelling."""
+    kept = "".join(" " if unicodedata.category(ch).startswith("P") else ch for ch in text.casefold())
+    return " ".join(kept.split())
+
+
+def split_sentences(records, hold_out):
+    """Given {split: [(key, record)]}, returns ({split: [record]} to write, and the counts).
+
+    Leaves out of train every recording of a dev or test sentence when hold_out is set, then
+    adds dev_new and test_new: the dev and test recordings whose sentence isn't in train."""
+    held = {key for name in ("dev", "test") for key, _ in records[name]} if hold_out else set()
+    train = [(key, record) for key, record in records["train"] if key not in held]
+    trained = {key for key, _ in train}
+    written = {"train": [record for _, record in train]}
+    for name in ("dev", "test"):
+        written[name] = [record for _, record in records[name]]
+        written[f"{name}_new"] = [record for key, record in records[name] if key not in trained]
+    counts = {"train held out": len(records["train"]) - len(train)}
+    return written, counts
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", required=True, help="the extracted asr_sinhala folder")
@@ -106,57 +137,61 @@ def main():
     parser.add_argument("--out", required=True, help="folder for train.jsonl, dev.jsonl and test.jsonl")
     parser.add_argument("--categories", default="E", help="categories to rewrite, such as E or EP (default E)")
     parser.add_argument("--check-audio", action="store_true", help="skip utterances whose FLAC is missing")
+    parser.add_argument("--hold-out-sentences", action="store_true",
+                        help="leave out of train every recording of a sentence that's in dev or test")
     args = parser.parse_args()
 
     data_dir = os.path.abspath(args.data_dir)
     split = load_split(args.split)
     table = load_loanwords(args.loanwords, set(args.categories))
-    os.makedirs(args.out, exist_ok=True)
 
-    outputs = {name: open(os.path.join(args.out, f"{name}.jsonl"), "w", encoding="utf-8") for name in SPLITS}
+    records = {name: [] for name in SPLITS}
     counts = collections.Counter()
     rewrites = collections.Counter()
     missing_speakers = set()
-    try:
-        with open(os.path.join(data_dir, "utt_spk_text.tsv"), encoding="utf-8") as lines:
-            for line in lines:
-                if not line.strip():
-                    continue
-                utterance, speaker, text = line.rstrip("\n").split("\t", 2)
-                name = split.get(speaker)
-                if name is None:
-                    missing_speakers.add(speaker)
-                    continue
-                path = audio_path(data_dir, utterance)
-                if args.check_audio and not os.path.exists(path):
-                    counts["missing audio"] += 1
-                    continue
-                words = clean(text).split()
-                if not words:
-                    counts["empty"] += 1
-                    continue
-                written_words = [rewrite_word(word, table) for word in words]
-                for before, after in zip(words, written_words):
-                    if before != after:
-                        rewrites[(before, after)] += 1
-                if written_words != words:
-                    counts[f"{name} rewritten"] += 1
-                written = " ".join(written_words)
-                record = {"audio": path, "text": PREFIX + written}
-                outputs[name].write(json.dumps(record, ensure_ascii=False) + "\n")
-                counts[name] += 1
-    finally:
-        for output in outputs.values():
-            output.close()
+    with open(os.path.join(data_dir, "utt_spk_text.tsv"), encoding="utf-8") as lines:
+        for line in lines:
+            if not line.strip():
+                continue
+            utterance, speaker, text = line.rstrip("\n").split("\t", 2)
+            name = split.get(speaker)
+            if name is None:
+                missing_speakers.add(speaker)
+                continue
+            path = audio_path(data_dir, utterance)
+            if args.check_audio and not os.path.exists(path):
+                counts["missing audio"] += 1
+                continue
+            words = clean(text).split()
+            if not words:
+                counts["empty"] += 1
+                continue
+            written_words = [rewrite_word(word, table) for word in words]
+            for before, after in zip(words, written_words):
+                if before != after:
+                    rewrites[(before, after)] += 1
+            if written_words != words:
+                counts[f"{name} rewritten"] += 1
+            written = " ".join(written_words)
+            records[name].append((sentence_key(written), {"audio": path, "text": PREFIX + written}))
 
     if missing_speakers:
         sys.exit(f"prepare_data: {len(missing_speakers)} speakers have no split, such as "
                  f"{sorted(missing_speakers)[:5]}; add them to {args.split}")
 
+    files, held_out = split_sentences(records, args.hold_out_sentences)
+    os.makedirs(args.out, exist_ok=True)
+    for name, rows in files.items():
+        with open(os.path.join(args.out, f"{name}.jsonl"), "w", encoding="utf-8") as output:
+            for record in rows:
+                output.write(json.dumps(record, ensure_ascii=False) + "\n")
+        counts[name] = len(rows)
+    counts.update(held_out)
     with open(os.path.join(args.out, "rewrites.tsv"), "w", encoding="utf-8") as report:
         for (before, after), count in rewrites.most_common():
             report.write(f"{before}\t{after}\t{count}\n")
-    for key in (*SPLITS, *(f"{name} rewritten" for name in SPLITS), "missing audio", "empty"):
+    for key in (*SPLITS, "dev_new", "test_new", "train held out",
+                *(f"{name} rewritten" for name in SPLITS), "missing audio", "empty"):
         print(f"{key}: {counts[key]}")
     print(f"distinct rewrites: {len(rewrites)}")
 

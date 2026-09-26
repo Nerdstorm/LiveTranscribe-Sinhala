@@ -263,6 +263,50 @@ struct ExportTests {
         #expect(try Export.addingLanguage("English", toConfig: config) == config)
     }
 
+    @Test func blendingMovesEachWeightTheGivenFractionOfTheWay() throws {
+        let trained: Tensors = ["a": MLXArray([Float(1), 2]), "b": MLXArray([Float(4)]).asType(.bfloat16)]
+        let base: Tensors = ["a": MLXArray([Float(3), 2]), "b": MLXArray([Float(0)])]
+        let quarter = try Export.blend(trained, with: base, fraction: 0.25)
+        #expect(quarter["a"]!.asArray(Float.self) == [2.5, 2])
+        #expect(quarter["b"]!.dtype == .float32 && quarter["b"]!.asArray(Float.self) == [1])
+        #expect(try Export.blend(trained, with: base, fraction: 1)["a"]!.asArray(Float.self) == [1, 2])
+        #expect(try Export.blend(trained, with: base, fraction: 0)["a"]!.asArray(Float.self) == [3, 2])
+    }
+
+    @Test func eachWeightCanHaveItsOwnFraction() throws {
+        let trained: Tensors = ["audio_tower.w": MLXArray([Float(4)]), "model.w": MLXArray([Float(4)])]
+        let base: Tensors = ["audio_tower.w": MLXArray([Float(0)]), "model.w": MLXArray([Float(0)])]
+        let blended = try Export.blend(trained, with: base) { $0.hasPrefix(Export.audioPrefix) ? 1 : 0.5 }
+        #expect(blended["audio_tower.w"]!.asArray(Float.self) == [4])
+        #expect(blended["model.w"]!.asArray(Float.self) == [2])
+        #expect(throws: ExportError.self) { try Export.blend(trained, with: base) { _ in -0.1 } }
+    }
+
+    @Test func blendingRefusesWeightsThatDontMatch() {
+        let trained: Tensors = ["a": MLXArray([Float(1), 2])]
+        #expect(throws: ExportError.self) { try Export.blend(trained, with: ["b": MLXArray([Float(1), 2])], fraction: 0.5) }
+        #expect(throws: ExportError.self) { try Export.blend(trained, with: ["a": MLXArray([Float(1)])], fraction: 0.5) }
+        #expect(throws: ExportError.self) { try Export.blend(trained, with: trained, fraction: 1.5) }
+    }
+
+    @Test func theBaseWeightsAreItsLayersDequantizedExactly() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(component: "base-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (packed, scales, biases) = Export.quantize(weights(), groupSize: 64, bits: 8, dtype: .bfloat16)
+        let norm = MLXArray([Float(0.5), 1.25]).asType(.bfloat16)
+        try MLX.save(arrays: ["proj.weight": packed, "proj.scales": scales, "proj.biases": biases, "norm.weight": norm],
+                     metadata: ["format": "mlx"], url: folder.appending(component: Export.weightsFile))
+        try #"{"quantization": {"group_size": 64, "bits": 8}}"#.write(
+            to: folder.appending(component: "config.json"), atomically: true, encoding: .utf8)
+
+        let base = try Export.baseWeights(in: folder)
+        #expect(Set(base.keys) == ["proj.weight", "norm.weight"])
+        #expect(base.values.allSatisfy { $0.dtype == .float32 })
+        #expect(MLX.abs(base["proj.weight"]!.reshaped(32, 8, 64) - unpacked(packed, scales, biases)).max().item(Float.self) == 0)
+        #expect(base["norm.weight"]!.asArray(Float.self) == [0.5, 1.25])
+    }
+
     @Test func aOneLineListKeepsItsSeparator() throws {
         let oneLine = #"{"support_languages": ["Chinese", "English"], "x": 1}"#
         #expect(try Export.addingLanguage("Sinhala", toConfig: oneLine)

@@ -51,6 +51,39 @@ class RewriteTests(unittest.TestCase):
         self.assertEqual(prep.rewrite("අපි ගෙදර යමු", self.table), "අපි ගෙදර යමු")
 
 
+class SentenceTests(unittest.TestCase):
+    def test_key_ignores_case_punctuation_and_spacing(self):
+        self.assertEqual(prep.sentence_key("මේ film එක බලන්න."), prep.sentence_key("මේ  Film එක, බලන්න"))
+        self.assertEqual(prep.sentence_key("“අපි යමු!”"), "අපි යමු")
+
+    def test_key_keeps_joiners(self):
+        self.assertNotEqual(prep.sentence_key("ශ්" + ZWJ + "රී"), prep.sentence_key("ශ්රී"))
+
+    def records(self, split, *texts):
+        return [(prep.sentence_key(text), {"text": text, "split": split}) for text in texts]
+
+    def test_new_sentences_are_those_not_in_train(self):
+        records = {"train": self.records("train", "අපි යමු", "ගෙදර යමු"),
+                   "dev": self.records("dev", "අපි යමු.", "වෙන දෙයක්"),
+                   "test": self.records("test", "ගෙදර යමු", "අලුත් වාක්‍යයක්")}
+        files, counts = prep.split_sentences(records, hold_out=False)
+        self.assertEqual([r["text"] for r in files["train"]], ["අපි යමු", "ගෙදර යමු"])
+        self.assertEqual([r["text"] for r in files["dev"]], ["අපි යමු.", "වෙන දෙයක්"])
+        self.assertEqual([r["text"] for r in files["dev_new"]], ["වෙන දෙයක්"])
+        self.assertEqual([r["text"] for r in files["test_new"]], ["අලුත් වාක්‍යයක්"])
+        self.assertEqual(counts, {"train held out": 0})
+
+    def test_holding_out_sentences_empties_train_of_dev_and_test_sentences(self):
+        records = {"train": self.records("train", "අපි යමු", "ගෙදර යමු", "තව එකක්"),
+                   "dev": self.records("dev", "අපි යමු."),
+                   "test": self.records("test", "ගෙදර යමු")}
+        files, counts = prep.split_sentences(records, hold_out=True)
+        self.assertEqual([r["text"] for r in files["train"]], ["තව එකක්"])
+        self.assertEqual(files["dev_new"], files["dev"])
+        self.assertEqual(files["test_new"], files["test"])
+        self.assertEqual(counts, {"train held out": 2})
+
+
 class LoadTests(unittest.TestCase):
     def write(self, text):
         handle = tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False, encoding="utf-8")
@@ -98,6 +131,7 @@ class EndToEndTests(unittest.TestCase):
                 capture_output=True, text=True, check=True,
             )
             self.assertIn("train: 1", result.stdout)
+            self.assertIn("test_new: 1", result.stdout)
             self.assertIn("empty: 1", result.stdout)
 
             def records(name):
@@ -109,9 +143,41 @@ class EndToEndTests(unittest.TestCase):
                 "text": "language Sinhala<asr_text>මගේ computer හොඳයි",
             }])
             self.assertEqual(records("test")[0]["text"], "language Sinhala<asr_text>අපි ගෙදර යමු")
+            self.assertEqual(records("test_new"), records("test"))
             self.assertEqual(records("dev"), [])
+            self.assertEqual(records("dev_new"), [])
             with open(os.path.join(out, "rewrites.tsv"), encoding="utf-8") as report:
                 self.assertEqual(report.read(), "කොම්පියුටර්\tcomputer\t1\n")
+
+    def test_holding_out_sentences_keeps_a_test_sentence_out_of_train(self):
+        with tempfile.TemporaryDirectory() as root:
+            data = os.path.join(root, "asr_sinhala")
+            os.makedirs(os.path.join(data, "data", "aa"))
+            with open(os.path.join(data, "utt_spk_text.tsv"), "w", encoding="utf-8") as tsv:
+                tsv.write("aa01\tspk1\tඅපි ගෙදර යමු\n")
+                tsv.write("aa02\tspk1\tතව එකක්\n")
+                tsv.write("aa03\tspk2\tඅපි ගෙදර යමු.\n")
+            split = os.path.join(root, "split.tsv")
+            with open(split, "w", encoding="utf-8") as tsv:
+                tsv.write("spk1\ttrain\nspk2\ttest\n")
+            loanwords = os.path.join(root, "loanwords.tsv")
+            open(loanwords, "w").close()
+            out = os.path.join(root, "out")
+            command = [sys.executable, str(SCRIPTS / "prepare_data.py"), "--data-dir", data, "--split", split,
+                       "--loanwords", loanwords, "--out", out]
+
+            def texts(name):
+                with open(os.path.join(out, f"{name}.jsonl"), encoding="utf-8") as lines:
+                    return [json.loads(line)["text"].split("<asr_text>")[1] for line in lines]
+
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            self.assertIn("test_new: 0", result.stdout)
+            self.assertEqual(texts("train"), ["අපි ගෙදර යමු", "තව එකක්"])
+
+            result = subprocess.run(command + ["--hold-out-sentences"], capture_output=True, text=True, check=True)
+            self.assertIn("train held out: 1", result.stdout)
+            self.assertEqual(texts("train"), ["තව එකක්"])
+            self.assertEqual(texts("test_new"), ["අපි ගෙදර යමු."])
 
     def test_a_speaker_without_a_split_stops_the_run(self):
         with tempfile.TemporaryDirectory() as root:

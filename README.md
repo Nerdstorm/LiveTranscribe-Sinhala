@@ -8,8 +8,18 @@ The aim is one model for English, the other languages Qwen3-ASR already knows, a
 Sinhala comes out in Sinhala script, with English words in English letters, as people type it:
 "meeting එක cancel කරන්න".
 
-**Status: the training data is prepared and tested, and the trainer is built and checked on a
-Mac. The model hasn't been trained yet ([docs/training.md](docs/training.md)).**
+**Status: the first model is trained, on a Mac, and published as
+[Nerdstorm/Qwen3-ASR-0.6B-Sinhala-8bit](https://huggingface.co/Nerdstorm/Qwen3-ASR-0.6B-Sinhala-8bit).
+On OpenSLR 52's 24 test speakers, whom it never heard, reading sentences that aren't in its
+training data, it gets 7.1% of Sinhala characters wrong (30.1% of words). It recognises every
+recording as Sinhala and writes 82% of English words in English letters. Its English WER on
+FLEURS is 5.24%, against the base model's 4.96% ([docs/training.md](docs/training.md)).**
+
+To use it in LiveTranscribe, enter `Nerdstorm/Qwen3-ASR-0.6B-Sinhala-8bit` as the speech-to-text
+model in **Settings › Advanced** and restart the app. It needs a version newer than 0.2.0 (for
+now, a build of `main`): 0.2.0 computes different audio features from the ones the model was
+trained on ([The audio features](docs/training.md#the-audio-features)). The app's cleanup is
+written for English, so set the cleanup level to None for Sinhala.
 
 ## Why fine-tune
 

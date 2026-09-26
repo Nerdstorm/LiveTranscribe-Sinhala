@@ -24,6 +24,8 @@ public enum ExportError: Error, CustomStringConvertible {
 public enum Export {
     public static let weightsFile = "model.safetensors"
     public static let indexFile = "model.safetensors.index.json"
+    /// Where the audio encoder's weights are in the model file.
+    public static let audioPrefix = "audio_tower."
 
     public struct Summary: Sendable {
         public let tensors: Int
@@ -90,6 +92,51 @@ public enum Export {
         try writeIndex(keys: exported.keys.sorted(), bytes: bytes, parameters: parameters,
                        to: output.appending(component: indexFile))
         return Summary(tensors: exported.count, quantizedLayers: quantizedLayers, bytes: bytes, parameters: parameters)
+    }
+
+    /// The base model's weights as training starts from them, keyed as `write` takes trained
+    /// weights: each quantized layer dequantized exactly in float32, everything else in float32.
+    public static func baseWeights(in base: URL) throws -> Tensors {
+        let reference = try loadArrays(url: base.appending(component: weightsFile))
+        let quantization = try Quantization.read(directory: base)
+        var weights = Tensors(minimumCapacity: reference.count)
+        for (key, value) in reference where !key.hasSuffix(".scales") && !key.hasSuffix(".biases") {
+            let layer = String(key.dropLast(".weight".count))
+            if key.hasSuffix(".weight"), let scales = reference[layer + ".scales"] {
+                guard let quantization else { throw ExportError.mismatch("\(layer) is quantized but config.json says nothing") }
+                weights[key] = TrainableModel.dequantize(value, scales: scales, biases: reference[layer + ".biases"],
+                                                          groupSize: quantization.groupSize, bits: quantization.bits)
+            } else {
+                weights[key] = value.asType(.float32)
+            }
+        }
+        return weights
+    }
+
+    /// Weight-space ensembling (WiSE-FT): `fraction` of each fine-tuned weight plus the rest of the
+    /// base model's, in float32. Moving back towards the base model gives back some of what
+    /// fine-tuning cost the languages it already knew, and some of what it learnt.
+    public static func blend(_ trained: Tensors, with base: Tensors, fraction: Float) throws -> Tensors {
+        try blend(trained, with: base) { _ in fraction }
+    }
+
+    /// `blend` with its own fraction for each weight, by key.
+    public static func blend(_ trained: Tensors, with base: Tensors, fraction: (String) -> Float) throws -> Tensors {
+        let missing = Set(trained.keys).symmetricDifference(base.keys)
+        guard missing.isEmpty else {
+            throw ExportError.mismatch("\(missing.count) weights are in only one of the models, e.g. \(missing.sorted().prefix(3).joined(separator: ", "))")
+        }
+        var blended = Tensors(minimumCapacity: trained.count)
+        for (key, weight) in trained {
+            let original = base[key]!
+            guard weight.shape == original.shape, weight.dtype.isFloatingPoint, original.dtype.isFloatingPoint else {
+                throw ExportError.mismatch("\(key) is \(weight.dtype) \(weight.shape), the base's is \(original.dtype) \(original.shape)")
+            }
+            let share = fraction(key)
+            guard (0 ... 1).contains(share) else { throw ExportError.mismatch("a blend of \(share) isn't between 0 and 1") }
+            blended[key] = weight.asType(.float32) * share + original.asType(.float32) * (1 - share)
+        }
+        return blended
     }
 
     /// Affine quantization of a [..., columns] weight, laid out as MLX lays it out: per group of
