@@ -9,7 +9,7 @@ The first model was trained this way on an M4 Pro Mac, and its test results are 
 | Data | Size | Use |
 |---|---|---|
 | [OpenSLR 52](https://www.openslr.org/52/) (16 zips, about 14.7 GB, CC BY-SA 4.0) | 185,293 utterances, 478 speakers, about 224 h | Sinhala: 172,134 train, 4,411 dev and 8,748 test utterances |
-| `data/speaker-split.tsv` (seed 52) | 442 / 12 / 24 speakers | no test voice is heard in training |
+| `data/speaker-split.tsv` (seed 52) | 442 / 12 / 24 speakers | no test voice is heard in training (sentences can be: [the run](#the-run), step 1) |
 | `data/loanwords.tsv` | 1,339 words, 415 of them English (E) | English words written in English letters |
 | [FLEURS](https://huggingface.co/datasets/google/fleurs) train splits in English, Chinese, Spanish, French and German (about 7.9 GB, CC BY 4.0), [LibriSpeech](https://www.openslr.org/12/) train-clean-100 (6.4 GB, CC BY 4.0) and `data/replay.tsv` | 30,128 of 30,824 utterances kept, 99.6 h, 14.9% of the mix | replay: keeps the languages the model already knows ([below](#replay-keeping-english)) |
 | Your own dictations | 10–20 clips | the real test: Sinhala as the app will hear it |
@@ -71,9 +71,18 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
    ```
 
    Every zip holds the same `LICENSE` and `utt_spk_text.tsv`, and `-n` keeps the first copy
-   instead of asking. The scripts should print train 172134, dev 4411 and test 8748, replay
-   30128, fleurs_en_test 647, fleurs_en_dev 394, and missing audio 0 each time. Training watches
-   English on the dev split; the test split is kept for the end. Read `jsonl/rewrites.tsv`: every
+   instead of asking. The scripts should print train 172134, dev 4411 and test 8748, dev_new
+   1242 and test_new 2547, replay 30128, fleurs_en_test 647, fleurs_en_dev 394, and missing
+   audio 0 each time. Training watches English on the dev split; the test split is kept for the
+   end.
+
+   `dev_new.jsonl` and `test_new.jsonl` are the dev and test recordings whose sentence isn't in
+   `train.jsonl`. The split keeps voices out of training, not sentences: OpenSLR's speakers read
+   from a shared pool, and 71% of test recordings read a sentence someone in train also reads, so
+   the full sets partly measure sentences the model has learnt to write. The first model was
+   trained on these files as they are. **For the next one, add `--hold-out-sentences`**: it leaves
+   out of train every recording of a dev or test sentence (15,850, so train is 156284), and dev and
+   test are then new in voice and sentence alike. Read `jsonl/rewrites.tsv`: every
    rewrite should be one a Sinhala speaker would type. FLEURS is about 7.9 GB and LibriSpeech
    6.4 GB; each file is checked against its published hash, and a download that breaks off carries
    on where it stopped when run again. The JSONL files point at the audio where it is, so leave it
@@ -190,7 +199,8 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
    | 0.5 | 56.62% | 5.70% |
 
    Export the last snapshots at a few shares, transcribe both dev sets (step 10's commands, with
-   `out/eval/dev-sample500.jsonl` and `jsonl/fleurs_en_dev.jsonl`), and take the lowest Sinhala
+   `out/eval/dev-sample500.jsonl` and `jsonl/fleurs_en_dev.jsonl`; next time, `jsonl/dev_new.jsonl`
+   in place of the sample, so the Sinhala is new sentences too), and take the lowest Sinhala
    CER whose English WER is within half a point of the base model's, with room to spare: the
    English dev set is 394 recordings, so a few tenths of a point is noise, and the test sets get
    one look. At the end of the first epoch, 0.9 gave 5.74% and 6.03%, 0.85 gave 6.01% and 5.88%,
@@ -210,6 +220,7 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
 
     ```bash
     $T transcribe --model out/export/Qwen3-ASR-0.6B-Sinhala-8bit --records jsonl/test.jsonl --out out/eval/test.tsv
+    $T transcribe --model out/export/Qwen3-ASR-0.6B-Sinhala-8bit --records jsonl/test_new.jsonl --out out/eval/test-new.tsv
     $T transcribe --model out/export/Qwen3-ASR-0.6B-Sinhala-8bit --records jsonl/fleurs_en_test.jsonl --out out/eval/english.tsv
     $T transcribe --model mlx-community/Qwen3-ASR-0.6B-8bit --records jsonl/fleurs_en_test.jsonl --out out/eval/english-base.tsv
     ```
@@ -219,11 +230,17 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
 
     The first model (the step-1816 snapshot at blend 0.8) scored:
     - Sinhala: CER 6.36% and WER 27.47% on all 8,748 test recordings.
-    - **On the 2,547 recordings whose sentence isn't in the training data: 7.08% and 30.10%.**
+    - **On the 2,547 recordings whose sentence isn't in the training data (`test_new.jsonl`):
+      7.08% and 30.10%.**
       The split keeps the test speakers' voices out of training but not their sentences. OpenSLR's
       speakers read from a shared pool, and 71% of the test recordings (72% of dev) read a sentence
       that someone in train also reads. Those score 6.06%. Dictation is all new sentences, so the
       7.08% is the number to expect.
+    - The 2,409 of them with no English words score 6.85% and 30.39%, so English words aren't what
+      makes WER high. One wrong character makes a whole word wrong, and a word here averages about
+      five characters, counting vowel signs. Of the words written differently, 37% are one
+      character off, often in the ending (කියල written කියලා), and 14% of word errors are only where
+      a space goes.
     - Every recording was recognised as Sinhala, and 730 of 889 English words (82%) came out in
       English letters.
     - English: FLEURS WER 5.24%, against the base model's 4.96%.
