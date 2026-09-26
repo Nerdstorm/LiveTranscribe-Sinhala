@@ -16,10 +16,22 @@ struct ExportCommand: AsyncParsableCommand {
     @Option(help: "The folder to write.") var out: String
     @Option(help: "The language to add to support_languages.") var language = "Sinhala"
     @Option(help: "A JSONL whose first few recordings the exported model transcribes as a check.") var check: String?
+    @Option(help: "How much of the fine-tuned weights to keep, from 0 to 1; the rest comes from the base model (weight-space ensembling). 1 exports them as they are.")
+    var blend: Float = 1
+    @Option(help: "The same for the audio encoder alone; --blend then covers the text model. Defaults to --blend.")
+    var blendAudio: Float?
 
     func run() async throws {
         let baseFolder = try await modelFolder(base)
-        let trained = try loadArrays(url: Checkpoints.weights(in: URL(fileURLWithPath: weights, isDirectory: true)))
+        var trained = try loadArrays(url: Checkpoints.weights(in: URL(fileURLWithPath: weights, isDirectory: true)))
+        let audio = blendAudio ?? blend
+        if blend < 1 || audio < 1 {
+            trained = try Export.blend(trained, with: Export.baseWeights(in: baseFolder)) {
+                $0.hasPrefix(Export.audioPrefix) ? audio : blend
+            }
+            say(String(format: "kept %.2f of the fine-tuned text model and %.2f of the audio encoder; the rest is the base model's",
+                       blend, audio))
+        }
         let output = URL(fileURLWithPath: out, isDirectory: true)
         let summary = try Export.write(weights: trained, base: baseFolder, to: output, language: language)
         say("wrote \(output.path): \(summary.tensors) tensors, \(summary.quantizedLayers) quantized layers, "
