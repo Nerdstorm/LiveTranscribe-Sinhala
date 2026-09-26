@@ -9,9 +9,10 @@ Sinhala comes out in Sinhala script, with English words in English letters, as p
 "meeting එක cancel කරන්න".
 
 **Status: the first model is trained, on a Mac. On OpenSLR 52's 24 test speakers, whom it never
-heard, it gets 6.4% of Sinhala characters wrong (27.5% of words), recognises every recording as
-Sinhala and writes 82% of English words in English letters. Its English WER on FLEURS is 5.24%,
-against the base model's 4.96% ([docs/training.md](docs/training.md)).**
+heard, reading sentences that aren't in its training data, it gets 7.1% of Sinhala characters wrong
+(30.1% of words). It recognises every recording as Sinhala and writes 82% of English words in
+English letters. Its English WER on FLEURS is 5.24%, against the base model's 4.96%
+([docs/training.md](docs/training.md)).**
 
 ## Why fine-tune
 

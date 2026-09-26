@@ -1,8 +1,8 @@
 # Training
 
 How the fine-tuning run goes, from the OpenSLR zips to an MLX model LiveTranscribe can load.
-The trainer is built and its checks pass (steps 1 to 5 of [the run](#the-run)). **The full run
-hasn't been done yet.**
+The first model was trained this way on an M4 Pro Mac, and its test results are in
+[the run](#the-run), step 10.
 
 ## What goes in
 
@@ -215,7 +215,21 @@ steps take about half as long again. Leave about 50 GB of disk free: two saved s
     ```
 
     Each writes a TSV of transcripts and a JSON report beside it: CER, WER, how many English words
-    came out in English letters, truncations and speed. Then your own dictations, and
+    came out in English letters, truncations and speed.
+
+    The first model (the step-1816 snapshot at blend 0.8) scored:
+    - Sinhala: CER 6.36% and WER 27.47% on all 8,748 test recordings.
+    - **On the 2,547 recordings whose sentence isn't in the training data: 7.08% and 30.10%.**
+      The split keeps the test speakers' voices out of training but not their sentences. OpenSLR's
+      speakers read from a shared pool, and 71% of the test recordings (72% of dev) read a sentence
+      that someone in train also reads. Those score 6.06%. Dictation is all new sentences, so the
+      7.08% is the number to expect.
+    - Every recording was recognised as Sinhala, and 730 of 889 English words (82%) came out in
+      English letters.
+    - English: FLEURS WER 5.24%, against the base model's 4.96%.
+    - No transcript was cut short or ran away.
+
+    Then your own dictations, and
     LiveTranscribe's own English eval on mlx-audio-swift `01dec7c`. Its Bench loads models by
     Hugging Face repo id, so it needs the export published, or an option to load a local folder.
 
